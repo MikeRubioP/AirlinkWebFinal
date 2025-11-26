@@ -1,2 +1,0 @@
-# AirlinkWebFinal
-lorca xD noma
