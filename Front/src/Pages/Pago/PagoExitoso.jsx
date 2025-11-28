@@ -1,4 +1,3 @@
-// src/Pages/Pago/PagoExitoso.jsx
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Clock, AlertCircle, Plane, Home } from 'lucide-react';
@@ -6,11 +5,11 @@ import { CheckCircle, XCircle, Clock, AlertCircle, Plane, Home } from 'lucide-re
 export default function PagoExitoso() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  
+
   const reservaId = searchParams.get('reservaId');
   const status = searchParams.get('status') || 'success';
   const sessionId = searchParams.get('session_id');
-  
+
   const [loading, setLoading] = useState(true);
   const [reservaData, setReservaData] = useState(null);
 
@@ -37,11 +36,11 @@ export default function PagoExitoso() {
           'airlink_skip_bus',
           'checkout_ready',
         ];
-        
+
         keysToRemove.forEach(key => {
           localStorage.removeItem(key);
         });
-        
+
         console.log('✅ Estado del flujo limpiado correctamente');
       } catch (error) {
         console.error('Error al limpiar el estado:', error);
@@ -59,7 +58,7 @@ export default function PagoExitoso() {
           // const response = await fetch(`http://localhost:5174/api/reservas/${reservaId}`);
           // const data = await response.json();
           // setReservaData(data);
-          
+
           // Por ahora, simulamos datos
           setReservaData({
             codigo: `RES-${reservaId}`,
@@ -210,7 +209,7 @@ export default function PagoExitoso() {
             <div className="p-8">
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
                 <p className="text-gray-600 mb-4">
-                  {status === 'cancel' 
+                  {status === 'cancel'
                     ? 'No se realizó ningún cargo a tu tarjeta.'
                     : 'Por favor, verifica tus datos de pago e intenta nuevamente.'
                   }

@@ -1,11 +1,18 @@
-// src/Pages/Pago/Pago.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { CreditCard, Building2, Wallet, AlertCircle, Clock, MapPin, Info } from "lucide-react";
 import axios from "axios";
+import Swal from "sweetalert2";
+import ValidatedInput from "../../Components/ValidatedInput.jsx";
+import { validateEmail } from "../../utils/validators.js";
+import {
+  validateNombrePasajero,
+  validateApellido,
+  validateDocumento,
+  validateTelefono,
+  validateFechaNacimiento,
+  validateGenero,
+} from "../../utils/passengerValidators.js";
 
-/* =========================
-   Helpers
-========================= */
 const CLP = (n) =>
   new Intl.NumberFormat("es-CL", {
     style: "currency",
@@ -23,14 +30,12 @@ const safeParse = (k) => {
 
 const pickFirst = (...vals) => vals.find(Boolean) || null;
 
-// 🎭 DETECTOR DE DATOS MOCK (solo para IDs que empiezan con "mock-")
 const detectarMock = (vuelo) => {
   if (!vuelo) return false;
   const id = String(vuelo.idViaje || vuelo.id || '');
   return id.startsWith('mock-');
 };
 
-// 🎭 GENERADOR DE BUSES MOCK
 const generarBusesMock = (origen, fecha, horaLlegada) => {
   const empresas = [
     { nombre: 'Turbus', color: 'bg-blue-600' },
@@ -49,11 +54,11 @@ const generarBusesMock = (origen, fecha, horaLlegada) => {
   for (let i = 0; i < numBuses; i++) {
     const empresa = empresas[i % empresas.length];
     const destino = destinos[i % destinos.length];
-    
+
     const minutosEspera = 90 + Math.floor(Math.random() * 150);
     const minutosSalida = minutosLlegada + minutosEspera;
     const horaSalida = `${String(Math.floor(minutosSalida / 60) % 24).padStart(2, '0')}:${String(minutosSalida % 60).padStart(2, '0')}`;
-    
+
     const duracionMin = 180 + Math.floor(Math.random() * 120);
     const minutosLlegadaBus = minutosSalida + duracionMin;
     const horaLlegadaBus = `${String(Math.floor(minutosLlegadaBus / 60) % 24).padStart(2, '0')}:${String(minutosLlegadaBus % 60).padStart(2, '0')}`;
@@ -82,31 +87,47 @@ const generarBusesMock = (origen, fecha, horaLlegada) => {
   return buses.sort((a, b) => a.horaSalida.localeCompare(b.horaSalida));
 };
 
-/* =========================
-   Componente
-========================= */
 export default function Pago() {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Paso 1: datos de pasajero
   const [passengerData, setPassengerData] = useState({
     nombre: "",
     apellido: "",
     fechaNacimiento: "",
     genero: "",
-    tipoDocumento: "DNI",
+    tipoDocumento: "RUT",
     numeroDocumento: "",
     correo: "",
     telefono: "",
   });
 
-  // --------- Lecturas base del flujo ----------
+  // Estados de validación
+  const [touched, setTouched] = useState({
+    nombre: false,
+    apellido: false,
+    fechaNacimiento: false,
+    genero: false,
+    numeroDocumento: false,
+    correo: false,
+    telefono: false,
+  });
+
+  const [validationErrors, setValidationErrors] = useState({
+    nombre: [],
+    apellido: [],
+    fechaNacimiento: [],
+    genero: [],
+    numeroDocumento: [],
+    correo: [],
+    telefono: [],
+  });
+
+  const [edadCalculada, setEdadCalculada] = useState(null);
   const searchState = useMemo(() => safeParse("searchState") || {}, []);
   const isRT = searchState?.tipoViaje === "RT";
 
-  // Fuente de verdad para vuelo + tarifa (IDA) con fallbacks
   const vueloSeleccionado = useMemo(
     () =>
       pickFirst(
@@ -132,7 +153,6 @@ export default function Pago() {
     []
   );
 
-  // --------- Lecturas para VUELTA (solo RT) ----------
   const vueloSeleccionadoVuelta = useMemo(
     () =>
       pickFirst(
@@ -153,12 +173,11 @@ export default function Pago() {
     []
   );
 
-  // --------- NUEVO: Costos de asientos ----------
   const asientosIda = useMemo(
     () => safeParse("airlink_checkout_asientos")?.asientosIda || [],
     []
   );
-  
+
   const asientosVuelta = useMemo(
     () => safeParse("airlink_checkout_asientos")?.asientosVuelta || [],
     []
@@ -176,7 +195,6 @@ export default function Pago() {
 
   const costoTotalAsientos = costoAsientosIda + costoAsientosVuelta;
 
-  // --------- Normalización IDA ----------
   const vueloNorm = useMemo(() => {
     const v = vueloSeleccionado;
     if (!v) return null;
@@ -203,7 +221,6 @@ export default function Pago() {
     };
   }, [tarifaSeleccionada]);
 
-  // --------- Normalización VUELTA ----------
   const vueloNormVuelta = useMemo(() => {
     const v = vueloSeleccionadoVuelta;
     if (!v) return null;
@@ -230,12 +247,10 @@ export default function Pago() {
     };
   }, [tarifaSeleccionadaVuelta]);
 
-  // Total del/los vuelo(s)
   const totalVuelo =
     Number(tarifaNorm?.precio || 0) +
     (isRT ? Number(tarifaNormVuelta?.precio || 0) : 0);
 
-  // Paso 2: buses - NUEVO: Estado para detalles del bus
   const [selectedBuses, setSelectedBuses] = useState([]);
   const [availableBuses, setAvailableBuses] = useState([]);
   const [skipBus, setSkipBus] = useState(Boolean(safeParse("airlink_skip_bus")));
@@ -279,7 +294,6 @@ export default function Pago() {
     }
   }, [currentStep, vueloNorm]);
 
-  // NUEVO: Función para cargar detalles completos de un bus
   const cargarDetalleBus = async (idViaje) => {
     try {
       setLoadingBusDetalle(true);
@@ -307,6 +321,134 @@ export default function Pago() {
     });
   };
 
+  const validateField = (fieldName, value) => {
+    let validation;
+
+    switch (fieldName) {
+      case "nombre":
+        validation = validateNombrePasajero(value);
+        break;
+      case "apellido":
+        validation = validateApellido(value);
+        break;
+      case "correo":
+        validation = validateEmail(value);
+        break;
+      case "telefono":
+        validation = validateTelefono(value);
+        break;
+      case "fechaNacimiento":
+        validation = validateFechaNacimiento(value);
+        if (validation.isValid && validation.metadata) {
+          setEdadCalculada(validation.metadata.edad);
+        } else {
+          setEdadCalculada(null);
+        }
+        break;
+      case "genero":
+        validation = validateGenero(value);
+        break;
+      case "numeroDocumento":
+        validation = validateDocumento(value, passengerData.tipoDocumento);
+        break;
+      default:
+        return true;
+    }
+
+    setValidationErrors((prev) => ({
+      ...prev,
+      [fieldName]: validation.errors,
+    }));
+
+    return validation.isValid;
+  };
+
+  const handlePassengerInputChange = (e) => {
+    const { name, value } = e.target;
+    setPassengerData((prev) => ({ ...prev, [name]: value }));
+    setError("");
+
+    if (touched[name]) {
+      validateField(name, value);
+    }
+  };
+
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    setTouched((prev) => ({
+      ...prev,
+      [name]: true,
+    }));
+    validateField(name, value);
+  };
+
+  const validateAllPassengerFields = () => {
+    const nombreValidation = validateNombrePasajero(passengerData.nombre);
+    const apellidoValidation = validateApellido(passengerData.apellido);
+    const correoValidation = validateEmail(passengerData.correo);
+    const telefonoValidation = validateTelefono(passengerData.telefono);
+    const fechaNacValidation = validateFechaNacimiento(passengerData.fechaNacimiento);
+    const generoValidation = validateGenero(passengerData.genero);
+    const documentoValidation = validateDocumento(
+      passengerData.numeroDocumento,
+      passengerData.tipoDocumento
+    );
+
+    setValidationErrors({
+      nombre: nombreValidation.errors,
+      apellido: apellidoValidation.errors,
+      correo: correoValidation.errors,
+      telefono: telefonoValidation.errors,
+      fechaNacimiento: fechaNacValidation.errors,
+      genero: generoValidation.errors,
+      numeroDocumento: documentoValidation.errors,
+    });
+
+    setTouched({
+      nombre: true,
+      apellido: true,
+      correo: true,
+      telefono: true,
+      fechaNacimiento: true,
+      genero: true,
+      numeroDocumento: true,
+    });
+
+    const allValid =
+      nombreValidation.isValid &&
+      apellidoValidation.isValid &&
+      correoValidation.isValid &&
+      telefonoValidation.isValid &&
+      fechaNacValidation.isValid &&
+      generoValidation.isValid &&
+      documentoValidation.isValid;
+
+    if (!allValid) {
+      Swal.fire({
+        icon: "warning",
+        title: "Datos incompletos",
+        text: "Por favor corrige los errores antes de continuar.",
+        confirmButtonColor: "#7c3aed",
+      });
+    }
+
+    return allValid;
+  };
+
+  const handleContinueFromPassenger = () => {
+    if (!vueloNorm || !tarifaNorm) {
+      setError("No se encontró la selección de vuelo. Vuelve a Detalle y elige una tarifa.");
+      return;
+    }
+
+    if (!validateAllPassengerFields()) {
+      return;
+    }
+
+    setCurrentStep(2);
+    setError("");
+  };
+
   const handleBusSelection = (bus) => {
     if (skipBus) return;
     setSelectedBuses((prev) => {
@@ -327,23 +469,12 @@ export default function Pago() {
     [selectedBuses]
   );
 
-  // Paso 3: método de pago
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("stripe");
-
   const paymentMethods = [
     { id: "stripe", name: "Stripe", description: "Pago seguro con tarjeta", icon: <CreditCard className="w-6 h-6" />, color: "bg-purple-600" },
     { id: "mercadopago", name: "Mercado Pago", description: "Múltiples opciones de pago", icon: <Wallet className="w-6 h-6" />, color: "bg-blue-400" },
     { id: "paypal", name: "PayPal", description: "Pago internacional seguro", icon: <Building2 className="w-6 h-6" />, color: "bg-sky-400" },
   ];
-
-  /* =========================
-     Validaciones & flujo
-  ========================= */
-  const handlePassengerInputChange = (e) => {
-    const { name, value } = e.target;
-    setPassengerData((prev) => ({ ...prev, [name]: value }));
-    setError("");
-  };
 
   const validatePassengerForm = () => {
     const required = ["nombre", "apellido", "fechaNacimiento", "genero", "numeroDocumento", "correo", "telefono"];
@@ -368,11 +499,6 @@ export default function Pago() {
     return true;
   };
 
-  const handleContinueFromPassenger = () => {
-    if (!validatePassengerForm()) return;
-    setCurrentStep(2);
-  };
-
   const handleContinueFromBuses = () => {
     if (!skipBus && selectedBuses.length === 0) {
       setError("Selecciona un bus o marca 'No necesito transporte terrestre'.");
@@ -382,11 +508,8 @@ export default function Pago() {
     setError("");
   };
 
-  /* =========================
-     Resumen (ida + vuelta + buses + ASIENTOS)
-  ========================= */
-  const total = useMemo(() => 
-    totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos, 
+  const total = useMemo(() =>
+    totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos,
     [totalVuelo, totalBuses, skipBus, costoTotalAsientos]
   );
 
@@ -394,28 +517,28 @@ export default function Pago() {
     return {
       vueloIda: vueloNorm
         ? {
-            idViaje: vueloNorm.idViaje,
-            empresa: vueloNorm.empresa,
-            origen: vueloNorm.origen,
-            destino: vueloNorm.destino,
-            horaSalida: vueloNorm.horaSalida,
-            horaLlegada: vueloNorm.horaLlegada,
-            tarifaNombre: tarifaNorm?.nombreTarifa || "Tarifa",
-            precio: Number(tarifaNorm?.precio || 0),
-          }
+          idViaje: vueloNorm.idViaje,
+          empresa: vueloNorm.empresa,
+          origen: vueloNorm.origen,
+          destino: vueloNorm.destino,
+          horaSalida: vueloNorm.horaSalida,
+          horaLlegada: vueloNorm.horaLlegada,
+          tarifaNombre: tarifaNorm?.nombreTarifa || "Tarifa",
+          precio: Number(tarifaNorm?.precio || 0),
+        }
         : null,
       vueloVuelta:
         isRT && vueloNormVuelta
           ? {
-              idViaje: vueloNormVuelta.idViaje,
-              empresa: vueloNormVuelta.empresa,
-              origen: vueloNormVuelta.origen,
-              destino: vueloNormVuelta.destino,
-              horaSalida: vueloNormVuelta.horaSalida,
-              horaLlegada: vueloNormVuelta.horaLlegada,
-              tarifaNombre: tarifaNormVuelta?.nombreTarifa || "Tarifa",
-              precio: Number(tarifaNormVuelta?.precio || 0),
-            }
+            idViaje: vueloNormVuelta.idViaje,
+            empresa: vueloNormVuelta.empresa,
+            origen: vueloNormVuelta.origen,
+            destino: vueloNormVuelta.destino,
+            horaSalida: vueloNormVuelta.horaSalida,
+            horaLlegada: vueloNormVuelta.horaLlegada,
+            tarifaNombre: tarifaNormVuelta?.nombreTarifa || "Tarifa",
+            precio: Number(tarifaNormVuelta?.precio || 0),
+          }
           : null,
       buses: skipBus ? [] : selectedBuses,
       asientosIda,
@@ -445,9 +568,6 @@ export default function Pago() {
     isRT,
   ]);
 
-  /* =========================
-     Guard visual si no hay vuelo
-  ========================= */
   if (!vueloNorm) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
@@ -464,9 +584,6 @@ export default function Pago() {
     );
   }
 
-  /* =========================
-     Pago - Envía vueloIda y vueloVuelta por separado + ASIENTOS
-  ========================= */
   const handlePayment = async () => {
     try {
       if (!resumen.vueloIda) {
@@ -481,7 +598,6 @@ export default function Pago() {
       setLoading(true);
       setError("");
 
-      // Preparar vuelo de ida
       const vueloIdaData = {
         idViaje: resumen.vueloIda.idViaje || resumen.vueloIda.id,
         empresa: resumen.vueloIda.empresa || "Aerolínea",
@@ -494,7 +610,6 @@ export default function Pago() {
         tipo: 'ida',
       };
 
-      // Preparar vuelo de vuelta (si existe)
       let vueloVueltaData = null;
       if (resumen.isRT && resumen.vueloVuelta) {
         vueloVueltaData = {
@@ -510,7 +625,6 @@ export default function Pago() {
         };
       }
 
-      // Preparar buses
       const busesData = (resumen.buses || []).map(bus => ({
         id: bus.idViaje || bus.id,
         idViaje: bus.idViaje || bus.id,
@@ -522,7 +636,6 @@ export default function Pago() {
         precioAdulto: Number(bus.precioAdulto) || 0,
       }));
 
-      // NUEVO: Preparar datos de asientos
       const asientosData = {
         asientosIda: resumen.asientosIda.map(a => ({
           numero: a.numero,
@@ -541,7 +654,6 @@ export default function Pago() {
         costoTotalAsientos: resumen.costoTotalAsientos
       };
 
-      // Construir payload con vueloIda y vueloVuelta separados + asientos
       const payload = {
         pasajero: {
           nombre: resumen.pasajero.nombre,
@@ -556,7 +668,7 @@ export default function Pago() {
         vueloIda: vueloIdaData,
         vueloVuelta: vueloVueltaData,
         buses: busesData,
-        asientos: asientosData, // NUEVO: Datos de asientos
+        asientos: asientosData,
         total: Number(resumen.total) || 0,
         metodoPago: selectedPaymentMethod,
       };
@@ -574,9 +686,8 @@ export default function Pago() {
       console.log('Método de pago:', payload.metodoPago);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-      // Crear reserva
       const reservaResp = await axios.post(
-        "http://localhost:5174/pagos/crear-reserva", 
+        "http://localhost:5174/pagos/crear-reserva",
         payload
       );
 
@@ -584,7 +695,6 @@ export default function Pago() {
 
       const { reservaId } = reservaResp.data;
 
-      // 2) Gateway de pago según método seleccionado
       const paymentPayload = {
         reservaId,
         pasajero: payload.pasajero,
@@ -592,7 +702,7 @@ export default function Pago() {
         vueloVuelta: payload.vueloVuelta,
         buses: payload.buses,
         asientos: payload.asientos,
-        total: payload.total, // ✅ Ahora incluye el total completo
+        total: payload.total,
       };
 
       console.log('💳 Payload para gateway de pago:', paymentPayload);
@@ -600,7 +710,7 @@ export default function Pago() {
 
       if (selectedPaymentMethod === "stripe") {
         const r = await axios.post(
-          "http://localhost:5174/pagos/stripe/create-session", 
+          "http://localhost:5174/pagos/stripe/create-session",
           paymentPayload
         );
         if (r.data?.url) {
@@ -613,7 +723,7 @@ export default function Pago() {
 
       if (selectedPaymentMethod === "mercadopago") {
         const r = await axios.post(
-          "http://localhost:5174/pagos/mercadopago/create-preference", 
+          "http://localhost:5174/pagos/mercadopago/create-preference",
           paymentPayload
         );
         if (r.data?.init_point) {
@@ -626,7 +736,7 @@ export default function Pago() {
 
       if (selectedPaymentMethod === "paypal") {
         const r = await axios.post(
-          "http://localhost:5174/pagos/paypal/create-order", 
+          "http://localhost:5174/pagos/paypal/create-order",
           paymentPayload
         );
         if (r.data?.approveUrl) {
@@ -641,22 +751,19 @@ export default function Pago() {
       console.error('📋 Respuesta del servidor:', e.response?.data);
       console.error('📊 Status:', e.response?.status);
       console.error('📝 Headers:', e.response?.headers);
-      
-      const errorMsg = e.response?.data?.error || 
-                       e.response?.data?.message || 
-                       e.response?.data?.msg ||
-                       e.message || 
-                       "Error al procesar el pago";
-      
+
+      const errorMsg = e.response?.data?.error ||
+        e.response?.data?.message ||
+        e.response?.data?.msg ||
+        e.message ||
+        "Error al procesar el pago";
+
       setError(`${errorMsg} (Status: ${e.response?.status || 'desconocido'})`);
     } finally {
       setLoading(false);
     }
   };
 
-  /* =========================
-     UI
-  ========================= */
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto space-y-4">
@@ -670,7 +777,6 @@ export default function Pago() {
           </div>
         )}
 
-        {/* Modal de detalles del bus */}
         {mostrarDetalleModal && busDetalleSeleccionado && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -683,14 +789,12 @@ export default function Pago() {
                   ×
                 </button>
               </div>
-              
+
               <div className="p-6 space-y-4">
-                {/* Empresa */}
                 <div className={`${busDetalleSeleccionado.color} text-white px-4 py-2 rounded-lg inline-block font-bold`}>
                   {busDetalleSeleccionado.empresa}
                 </div>
 
-                {/* Ruta */}
                 <div className="grid grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
                   <div>
                     <p className="text-sm text-gray-500 mb-1">Origen</p>
@@ -715,7 +819,6 @@ export default function Pago() {
                   </div>
                 </div>
 
-                {/* Fecha y tipo de bus */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-500">Fecha de salida</p>
@@ -727,7 +830,6 @@ export default function Pago() {
                   </div>
                 </div>
 
-                {/* Servicios */}
                 {busDetalleSeleccionado.servicios && busDetalleSeleccionado.servicios.length > 0 && (
                   <div>
                     <p className="text-sm font-semibold text-gray-700 mb-2">Servicios incluidos:</p>
@@ -742,7 +844,6 @@ export default function Pago() {
                   </div>
                 )}
 
-                {/* Precio y cupos */}
                 <div className="bg-purple-50 p-4 rounded-lg">
                   <div className="flex justify-between items-center">
                     <div>
@@ -767,91 +868,223 @@ export default function Pago() {
           </div>
         )}
 
-        {/* PASO 1: Pasajero */}
         <div
-          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${
-            currentStep === 1 ? "border-purple-600" : "border-gray-200"
-          }`}
+          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 1 ? "border-purple-600" : "border-gray-200"
+            }`}
         >
           <button
             onClick={() => currentStep > 1 && setCurrentStep(1)}
             className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50"
           >
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
-                currentStep >= 1 ? "bg-purple-600 text-white" : "bg-gray-300"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${currentStep >= 1 ? "bg-purple-600 text-white" : "bg-gray-300"
+                }`}
             >
               1
             </div>
-            <h2 className="text-lg font-bold text-gray-900">Pasajero</h2>
+            <h2 className="text-lg font-bold text-gray-900">Datos del Pasajero</h2>
           </button>
 
           {currentStep === 1 && (
             <div className="px-4 pb-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ValidatedInput
+                  label="Nombre"
                   type="text"
                   name="nombre"
-                  placeholder="Nombre"
                   value={passengerData.nombre}
                   onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
+                  onBlur={handleBlur}
+                  placeholder="Juan"
+                  errors={validationErrors.nombre}
+                  touched={touched.nombre}
+                  required
+                  maxLength={50}
+                  autoComplete="given-name"
                 />
-                <input
+
+                <ValidatedInput
+                  label="Apellido"
                   type="text"
                   name="apellido"
-                  placeholder="Apellido"
                   value={passengerData.apellido}
                   onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
+                  onBlur={handleBlur}
+                  placeholder="Pérez"
+                  errors={validationErrors.apellido}
+                  touched={touched.apellido}
+                  required
+                  maxLength={50}
+                  autoComplete="family-name"
                 />
-                <input
-                  type="date"
-                  name="fechaNacimiento"
-                  value={passengerData.fechaNacimiento}
-                  onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
-                />
-                <select
-                  name="genero"
-                  value={passengerData.genero}
-                  onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm text-gray-700"
-                >
-                  <option value="">Género</option>
-                  <option value="Masculino">Masculino</option>
-                  <option value="Femenino">Femenino</option>
-                  <option value="Otro">Otro</option>
-                </select>
-                <input
+
+                <div className="w-full">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fecha de Nacimiento
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    name="fechaNacimiento"
+                    value={passengerData.fechaNacimiento}
+                    onChange={handlePassengerInputChange}
+                    onBlur={handleBlur}
+                    max={new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    min={new Date(Date.now() - 120 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    autoComplete="bday"
+                    className={`
+                      w-full px-4 py-3 border rounded-lg 
+                      focus:ring-2 focus:border-transparent outline-none
+                      transition-colors duration-200
+                      ${touched.fechaNacimiento && validationErrors.fechaNacimiento.length > 0
+                        ? "border-red-500 focus:ring-red-500"
+                        : touched.fechaNacimiento && passengerData.fechaNacimiento
+                          ? "border-green-500 focus:ring-green-500"
+                          : "border-gray-300 focus:ring-purple-600"
+                      }
+                    `}
+                  />
+                  {touched.fechaNacimiento && validationErrors.fechaNacimiento.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {validationErrors.fechaNacimiento.map((error, index) => (
+                        <p key={index} className="text-xs text-red-600 flex items-start">
+                          <span className="mr-1">•</span>
+                          <span>{error}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {edadCalculada !== null && (
+                    <p className="text-xs text-green-600 mt-1 font-medium">
+                      ✓ Edad: {edadCalculada} año{edadCalculada !== 1 ? 's' : ''}
+                      {edadCalculada < 2 && ' (Bebé)'}
+                      {edadCalculada >= 2 && edadCalculada < 12 && ' (Niño)'}
+                      {edadCalculada >= 12 && edadCalculada < 18 && ' (Menor de edad)'}
+                      {edadCalculada >= 18 && edadCalculada < 60 && ' (Adulto)'}
+                      {edadCalculada >= 60 && ' (Adulto mayor)'}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    El pasajero debe tener al menos 10 días de nacido
+                  </p>
+                </div>
+
+                <div className="w-full">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Género
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <select
+                    name="genero"
+                    value={passengerData.genero}
+                    onChange={handlePassengerInputChange}
+                    onBlur={handleBlur}
+                    className={`
+                      w-full px-4 py-3 border rounded-lg 
+                      focus:ring-2 focus:border-transparent outline-none
+                      transition-colors duration-200
+                      ${touched.genero && validationErrors.genero.length > 0
+                        ? "border-red-500 focus:ring-red-500"
+                        : touched.genero && passengerData.genero
+                          ? "border-green-500 focus:ring-green-500"
+                          : "border-gray-300 focus:ring-purple-600"
+                      }
+                    `}
+                  >
+                    <option value="">Selecciona...</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Femenino">Femenino</option>
+                    <option value="Otro">Otro</option>
+                  </select>
+                  {touched.genero && validationErrors.genero.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {validationErrors.genero.map((error, index) => (
+                        <p key={index} className="text-xs text-red-600 flex items-start">
+                          <span className="mr-1">•</span>
+                          <span>{error}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de Documento
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <select
+                    name="tipoDocumento"
+                    value={passengerData.tipoDocumento}
+                    onChange={handlePassengerInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent outline-none"
+                  >
+                    <option value="RUT">RUT (Chile)</option>
+                    <option value="DNI">DNI</option>
+                    <option value="Pasaporte">Pasaporte</option>
+                  </select>
+                </div>
+
+                <ValidatedInput
+                  label={`Número de ${passengerData.tipoDocumento}`}
                   type="text"
                   name="numeroDocumento"
-                  placeholder="Número de documento"
                   value={passengerData.numeroDocumento}
                   onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
+                  onBlur={handleBlur}
+                  placeholder={
+                    passengerData.tipoDocumento === "RUT"
+                      ? "12345678-9"
+                      : passengerData.tipoDocumento === "DNI"
+                        ? "12345678"
+                        : "AB123456"
+                  }
+                  errors={validationErrors.numeroDocumento}
+                  touched={touched.numeroDocumento}
+                  required
+                  maxLength={20}
                 />
-                <input
+
+                <ValidatedInput
+                  label="Correo Electrónico"
                   type="email"
                   name="correo"
-                  placeholder="Correo"
                   value={passengerData.correo}
                   onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
+                  onBlur={handleBlur}
+                  placeholder="ejemplo@correo.com"
+                  errors={validationErrors.correo}
+                  touched={touched.correo}
+                  required
+                  maxLength={100}
+                  autoComplete="email"
                 />
-                <input
+
+                <ValidatedInput
+                  label="Teléfono"
                   type="tel"
                   name="telefono"
-                  placeholder="Teléfono"
                   value={passengerData.telefono}
                   onChange={handlePassengerInputChange}
-                  className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 text-sm"
+                  onBlur={handleBlur}
+                  placeholder="+56912345678"
+                  errors={validationErrors.telefono}
+                  touched={touched.telefono}
+                  required
+                  maxLength={15}
+                  autoComplete="tel"
                 />
               </div>
+
+              <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-600 rounded-r-lg">
+                <p className="text-sm text-blue-900">
+                  <strong>Importante:</strong> Asegúrate de que los datos coincidan exactamente con tu documento de identidad.
+                </p>
+              </div>
+
               <button
                 onClick={handleContinueFromPassenger}
-                className="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg"
+                className="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition-colors"
               >
                 CONTINUAR CON BUSES
               </button>
@@ -859,20 +1092,17 @@ export default function Pago() {
           )}
         </div>
 
-        {/* PASO 2: Buses */}
         <div
-          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${
-            currentStep === 2 ? "border-purple-600" : "border-gray-200"
-          }`}
+          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 2 ? "border-purple-600" : "border-gray-200"
+            }`}
         >
           <button
             onClick={() => currentStep > 2 && setCurrentStep(2)}
             className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50"
           >
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
-                currentStep >= 2 ? "bg-purple-600 text-white" : "bg-gray-300"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${currentStep >= 2 ? "bg-purple-600 text-white" : "bg-gray-300"
+                }`}
             >
               2
             </div>
@@ -925,9 +1155,8 @@ export default function Pago() {
                         return (
                           <div
                             key={bus.idViaje}
-                            className={`border rounded-xl p-4 transition-all ${
-                              selected ? "border-purple-600 bg-purple-50" : "border-gray-200 hover:border-gray-300"
-                            }`}
+                            className={`border rounded-xl p-4 transition-all ${selected ? "border-purple-600 bg-purple-50" : "border-gray-200 hover:border-gray-300"
+                              }`}
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1">
@@ -980,11 +1209,10 @@ export default function Pago() {
                                 </div>
                                 <button
                                   onClick={() => handleBusSelection(bus)}
-                                  className={`w-full px-6 py-2 font-semibold rounded-lg text-sm transition-colors ${
-                                    selected
-                                      ? "bg-gray-300 text-gray-700"
-                                      : "bg-purple-600 text-white hover:bg-purple-700"
-                                  }`}
+                                  className={`w-full px-6 py-2 font-semibold rounded-lg text-sm transition-colors ${selected
+                                    ? "bg-gray-300 text-gray-700"
+                                    : "bg-purple-600 text-white hover:bg-purple-700"
+                                    }`}
                                 >
                                   {selected ? "Seleccionado ✓" : "Seleccionar"}
                                 </button>
@@ -1017,17 +1245,14 @@ export default function Pago() {
           )}
         </div>
 
-        {/* PASO 3: Pago */}
         <div
-          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${
-            currentStep === 3 ? "border-purple-600" : "border-gray-200"
-          }`}
+          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 3 ? "border-purple-600" : "border-gray-200"
+            }`}
         >
           <button className="w-full flex items-center gap-3 p-4 text-left">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
-                currentStep >= 3 ? "bg-purple-600 text-white" : "bg-gray-300"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${currentStep >= 3 ? "bg-purple-600 text-white" : "bg-gray-300"
+                }`}
             >
               3
             </div>
@@ -1036,7 +1261,6 @@ export default function Pago() {
 
           {currentStep === 3 && (
             <div className="px-4 pb-6 space-y-4">
-              {/* Card Vuelo (ida y, si corresponde, vuelta) */}
               <div className="border-2 border-purple-600 rounded-2xl p-4 flex flex-col gap-3">
                 {resumen.vueloIda && (
                   <div className="flex items-start justify-between">
@@ -1073,17 +1297,15 @@ export default function Pago() {
                 )}
               </div>
 
-              {/* Métodos de pago */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {paymentMethods.map((method) => (
                   <button
                     key={method.id}
                     onClick={() => setSelectedPaymentMethod(method.id)}
-                    className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                      selectedPaymentMethod === method.id
-                        ? "border-purple-600 bg-purple-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
+                    className={`relative p-4 rounded-xl border-2 transition-all text-left ${selectedPaymentMethod === method.id
+                      ? "border-purple-600 bg-purple-50"
+                      : "border-gray-200 hover:border-gray-300"
+                      }`}
                   >
                     <div className={`${method.color} text-white rounded-lg p-2.5 inline-flex mb-2`}>
                       {method.icon}
@@ -1105,7 +1327,6 @@ export default function Pago() {
                 ))}
               </div>
 
-              {/* Resumen total con ASIENTOS */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h3 className="font-bold text-gray-900 mb-3">Resumen de tu reserva</h3>
                 <div className="space-y-2 text-sm">
@@ -1127,7 +1348,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* NUEVO: Mostrar asientos de ida */}
                   {resumen.asientosIda && resumen.asientosIda.length > 0 && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">
@@ -1137,7 +1357,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* NUEVO: Mostrar asientos de vuelta */}
                   {resumen.asientosVuelta && resumen.asientosVuelta.length > 0 && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">

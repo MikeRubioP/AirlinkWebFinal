@@ -8,7 +8,19 @@ const toISO = (val) => {
   const d = val instanceof Date ? val : new Date(val);
   return isNaN(d) ? null : d.toISOString().split("T")[0];
 };
-const todayISO = toISO(new Date());
+
+// Obtener la fecha de hoy en la zona horaria de Chile (UTC-3)
+const getTodayChile = () => {
+  const now = new Date();
+  // Convertir a hora de Chile (UTC-3)
+  const chileDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Santiago' }));
+  const year = chileDate.getFullYear();
+  const month = String(chileDate.getMonth() + 1).padStart(2, '0');
+  const day = String(chileDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const todayISO = getTodayChile();
 const fmtCLP = (n) =>
   Number(n || 0).toLocaleString("es-CL", {
     style: "currency",
@@ -67,8 +79,22 @@ export default function BuscarVuelos() {
       if (searchState) {
         setOrigen(searchState.origen ?? "SCL");
         setDestino(searchState.destino ?? "");
-        setFechaIda(toISO(searchState.fechaIda) ?? todayISO);
-        setFechaVuelta(toISO(searchState.fechaVuelta) ?? "");
+
+        // VALIDACIÓN: No permitir fechas pasadas
+        const fechaIdaBuscada = toISO(searchState.fechaIda);
+        if (fechaIdaBuscada && fechaIdaBuscada < todayISO) {
+          setFechaIda(todayISO);
+        } else {
+          setFechaIda(fechaIdaBuscada ?? todayISO);
+        }
+
+        const fechaVueltaBuscada = toISO(searchState.fechaVuelta);
+        if (fechaVueltaBuscada && fechaVueltaBuscada < todayISO) {
+          setFechaVuelta("");
+        } else {
+          setFechaVuelta(fechaVueltaBuscada ?? "");
+        }
+
         setTipoViaje(searchState.tipoViaje ?? "solo-ida");
         setClase(searchState.clase ?? "eco");
         setPasajeros(searchState.pasajeros ?? 1);
@@ -109,19 +135,19 @@ export default function BuscarVuelos() {
       console.log(`🔍 Buscando vuelos: ${org} → ${dest} para ${fechaISO}`);
       const url = `${API_BASE}/vuelos/buscar?origen=${org}&destino=${dest}&fecha=${fechaISO}&clase=${claseSel}`;
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Error al buscar vuelos');
       }
-      
+
       const data = await response.json();
       console.log(`✅ Vuelos recibidos:`, data.length);
 
       if (!data || data.length === 0) {
         console.warn('⚠️ No hay vuelos disponibles para esta búsqueda');
         setVuelos([]);
-        setError(null); // No mostrar error, solo el mensaje de "no hay vuelos"
+        setError(null);
         return;
       }
 
@@ -165,12 +191,18 @@ export default function BuscarVuelos() {
   const generarFechasDisponibles = (baseISO) => {
     if (!baseISO) return;
     const fechas = [];
-    const fechaBase = new Date(baseISO);
+    const fechaBase = new Date(baseISO + 'T00:00:00');
+
     for (let i = -3; i <= 3; i++) {
       const d = new Date(fechaBase);
       d.setDate(fechaBase.getDate() + i);
+
       const iso = toISO(d);
       if (!iso) continue;
+
+      // VALIDACIÓN: Filtrar fechas pasadas comparando strings ISO
+      if (iso < todayISO) continue;
+
       fechas.push({
         fecha: iso,
         dia: d.toLocaleDateString("es-ES", { weekday: "short" }),
@@ -207,12 +239,12 @@ export default function BuscarVuelos() {
       vueloIda: vueloConTarifa,
       tarifaIda: t
         ? {
-            idTarifa: t.idTarifa,
-            nombre: t.nombre || t.nombreTarifa,
-            precio: Number(t.precio),
-            moneda: t.moneda,
-            cupos: t.cupos,
-          }
+          idTarifa: t.idTarifa,
+          nombre: t.nombre || t.nombreTarifa,
+          precio: Number(t.precio),
+          moneda: t.moneda,
+          cupos: t.cupos,
+        }
         : null,
       origen,
       destino,
@@ -268,31 +300,28 @@ export default function BuscarVuelos() {
                 <button
                   key={f.fecha}
                   onClick={() => setFechaIda(f.fecha)}
-                  className={`px-6 py-3 rounded-lg border-2 transition-all ${
-                    fechaIda === f.fecha
+                  className={`px-6 py-3 rounded-lg border-2 transition-all ${fechaIda === f.fecha
                       ? "border-purple-600 bg-purple-600 text-white shadow-lg transform scale-105"
                       : "border-gray-200 hover:border-purple-300 hover:shadow-md bg-white"
-                  }`}
+                    }`}
                 >
                   <div
-                    className={`text-xs mb-1 ${
-                      fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
-                    }`}
+                    className={`text-xs mb-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
+                      }`}
                   >
                     {f.dia}
                   </div>
                   <div className="text-2xl font-bold">{f.numero}</div>
                   <div
-                    className={`text-xs mt-1 ${
-                      fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
-                    }`}
+                    className={`text-xs mt-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
+                      }`}
                   >
                     {f.mes}
                   </div>
                 </button>
               ))}
             </div>
-            
+
             {/* Selector de fecha de vuelta si es ida y vuelta */}
             {tipoViaje === "ida-vuelta" && fechaVuelta && (
               <div className="mt-6">
@@ -303,7 +332,7 @@ export default function BuscarVuelos() {
                   <input
                     type="date"
                     value={fechaVuelta}
-                    min={fechaIda}
+                    min={fechaIda} // ✅ No permite seleccionar antes de la fecha de ida
                     onChange={(e) => setFechaVuelta(e.target.value)}
                     className="border-2 border-purple-300 rounded-lg px-4 py-2 text-center font-medium focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
@@ -320,9 +349,9 @@ export default function BuscarVuelos() {
             Vuelos disponibles {origen} → {destino}
             {tipoViaje === "ida-vuelta" && fechaVuelta && (
               <span className="text-lg text-gray-600 ml-2">
-                (Vuelta: {new Date(fechaVuelta).toLocaleDateString("es-ES", { 
-                  day: "numeric", 
-                  month: "short" 
+                (Vuelta: {new Date(fechaVuelta).toLocaleDateString("es-ES", {
+                  day: "numeric",
+                  month: "short"
                 })})
               </span>
             )}
@@ -376,8 +405,7 @@ export default function BuscarVuelos() {
             <div className="text-6xl mb-4">✈️</div>
             <p className="text-gray-500 text-lg mb-2">No se encontraron vuelos para esta búsqueda</p>
             <p className="text-gray-400 text-sm mb-4">Intenta con otras fechas o destinos</p>
-            
-            {/* Información de ayuda */}
+
             <div className="mt-6 max-w-md mx-auto bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
               <p className="text-sm text-blue-800 font-medium mb-2">💡 Sugerencias:</p>
               <ul className="text-sm text-blue-700 space-y-1">
@@ -507,9 +535,8 @@ export default function BuscarVuelos() {
                                   </h4>
                                 </div>
 
-                                <ul className={`space-y-2 text-xs mb-4 min-h-[200px] ${
-                                  premium ? "text-gray-200" : "text-gray-700"
-                                }`}>
+                                <ul className={`space-y-2 text-xs mb-4 min-h-[200px] ${premium ? "text-gray-200" : "text-gray-700"
+                                  }`}>
                                   {light && (
                                     <>
                                       <li className="flex gap-2"><span className="text-green-500">✓</span>Bolso o mochila</li>
@@ -567,10 +594,9 @@ export default function BuscarVuelos() {
                                         },
                                       })
                                     }
-                                    className={`w-full py-2 rounded text-sm font-medium transition-all ${
-                                      premium ? "bg-white text-gray-900 hover:bg-gray-100"
-                                              : "bg-purple-600 text-white hover:bg-purple-700"
-                                    }`}
+                                    className={`w-full py-2 rounded text-sm font-medium transition-all ${premium ? "bg-white text-gray-900 hover:bg-gray-100"
+                                        : "bg-purple-600 text-white hover:bg-purple-700"
+                                      }`}
                                   >
                                     {light ? "Continuar con Light" : "Elegir"}
                                   </button>

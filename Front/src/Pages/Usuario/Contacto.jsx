@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import Swal from "sweetalert2";
 import ValidatedInput from "../../Components/ValidatedInput.jsx";
-import { validateEmail, validateFullName, sanitizeInput } from "../../utils/validators.js"; // Ajusta la ruta
+import { validateEmail, validateFullName, sanitizeInput } from "../../utils/validators.js";
 
 // Validación personalizada para asunto
 const validateAsunto = (asunto) => {

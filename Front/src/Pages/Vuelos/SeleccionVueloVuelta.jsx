@@ -70,11 +70,11 @@ export default function SeleccionVueloVuelta() {
     try {
       const url = `${API_BASE}/vuelos/buscar?origen=${org}&destino=${dest}&fecha=${fechaISO}&clase=${claseSel}`;
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error('Error al buscar vuelos de vuelta');
       }
-      
+
       const data = await response.json();
 
       // Cargar tarifas para cada vuelo
@@ -152,12 +152,12 @@ export default function SeleccionVueloVuelta() {
       vueloVuelta: vueloConTarifa,
       tarifaVuelta: t
         ? {
-            idTarifa: t.idTarifa,
-            nombre: t.nombre || t.nombreTarifa,
-            precio: Number(t.precio),
-            moneda: t.moneda,
-            cupos: t.cupos,
-          }
+          idTarifa: t.idTarifa,
+          nombre: t.nombre || t.nombreTarifa,
+          precio: Number(t.precio),
+          moneda: t.moneda,
+          cupos: t.cupos,
+        }
         : null,
       fechaVuelta: toISO(fechaVuelta),
 
@@ -261,24 +261,21 @@ export default function SeleccionVueloVuelta() {
                 <button
                   key={f.fecha}
                   onClick={() => setFechaVuelta(f.fecha)}
-                  className={`px-6 py-3 rounded-lg border-2 transition-all ${
-                    fechaVuelta === f.fecha
+                  className={`px-6 py-3 rounded-lg border-2 transition-all ${fechaVuelta === f.fecha
                       ? "border-purple-600 bg-purple-600 text-white shadow-lg transform scale-105"
                       : "border-gray-200 hover:border-purple-300 hover:shadow-md bg-white"
-                  }`}
+                    }`}
                 >
                   <div
-                    className={`text-xs mb-1 ${
-                      fechaVuelta === f.fecha ? "text-purple-100" : "text-gray-500"
-                    }`}
+                    className={`text-xs mb-1 ${fechaVuelta === f.fecha ? "text-purple-100" : "text-gray-500"
+                      }`}
                   >
                     {f.dia}
                   </div>
                   <div className="text-2xl font-bold">{f.numero}</div>
                   <div
-                    className={`text-xs mt-1 ${
-                      fechaVuelta === f.fecha ? "text-purple-100" : "text-gray-500"
-                    }`}
+                    className={`text-xs mt-1 ${fechaVuelta === f.fecha ? "text-purple-100" : "text-gray-500"
+                      }`}
                   >
                     {f.mes}
                   </div>
@@ -464,9 +461,8 @@ export default function SeleccionVueloVuelta() {
                                     </h4>
                                   </div>
 
-                                  <ul className={`space-y-2 text-xs mb-4 min-h-[180px] ${
-                                    premium ? "text-gray-200" : "text-gray-700"
-                                  }`}>
+                                  <ul className={`space-y-2 text-xs mb-4 min-h-[180px] ${premium ? "text-gray-200" : "text-gray-700"
+                                    }`}>
                                     {light && (
                                       <>
                                         <li className="flex gap-2"><span className="text-green-500">✓</span>Bolso o mochila</li>
@@ -525,10 +521,9 @@ export default function SeleccionVueloVuelta() {
                                           },
                                         })
                                       }
-                                      className={`w-full py-2 rounded text-sm font-medium transition-all ${
-                                        premium ? "bg-white text-gray-900 hover:bg-gray-100"
-                                                : "bg-purple-600 text-white hover:bg-purple-700"
-                                      }`}
+                                      className={`w-full py-2 rounded text-sm font-medium transition-all ${premium ? "bg-white text-gray-900 hover:bg-gray-100"
+                                          : "bg-purple-600 text-white hover:bg-purple-700"
+                                        }`}
                                     >
                                       {light ? "Continuar con Light" : "Elegir tarifa"}
                                     </button>
