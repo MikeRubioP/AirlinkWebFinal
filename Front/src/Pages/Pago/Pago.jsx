@@ -153,6 +153,29 @@ export default function Pago() {
     []
   );
 
+  // --------- NUEVO: Costos de asientos ----------
+  const asientosIda = useMemo(
+    () => safeParse("airlink_checkout_asientos")?.asientosIda || [],
+    []
+  );
+  
+  const asientosVuelta = useMemo(
+    () => safeParse("airlink_checkout_asientos")?.asientosVuelta || [],
+    []
+  );
+
+  const costoAsientosIda = useMemo(
+    () => asientosIda.reduce((sum, asiento) => sum + (asiento.precio || 0), 0),
+    [asientosIda]
+  );
+
+  const costoAsientosVuelta = useMemo(
+    () => asientosVuelta.reduce((sum, asiento) => sum + (asiento.precio || 0), 0),
+    [asientosVuelta]
+  );
+
+  const costoTotalAsientos = costoAsientosIda + costoAsientosVuelta;
+
   // --------- Normalización IDA ----------
   const vueloNorm = useMemo(() => {
     const v = vueloSeleccionado;
@@ -244,7 +267,6 @@ export default function Pago() {
         })
         .catch((err) => {
           console.error("Error al cargar buses, usando alternativas:", err);
-          // Fallback a buses mock solo si falla la API
           const busesMock = generarBusesMock(
             vueloNorm.destino,
             vueloNorm.fechaSalida,
@@ -361,9 +383,12 @@ export default function Pago() {
   };
 
   /* =========================
-     Resumen (ida + vuelta + buses)
+     Resumen (ida + vuelta + buses + ASIENTOS)
   ========================= */
-  const total = useMemo(() => totalVuelo + (skipBus ? 0 : totalBuses), [totalVuelo, totalBuses, skipBus]);
+  const total = useMemo(() => 
+    totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos, 
+    [totalVuelo, totalBuses, skipBus, costoTotalAsientos]
+  );
 
   const resumen = useMemo(() => {
     return {
@@ -393,7 +418,12 @@ export default function Pago() {
             }
           : null,
       buses: skipBus ? [] : selectedBuses,
-      total: totalVuelo + (skipBus ? 0 : totalBuses),
+      asientosIda,
+      asientosVuelta,
+      costoAsientosIda,
+      costoAsientosVuelta,
+      costoTotalAsientos,
+      total: totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos,
       pasajero: passengerData,
       isRT,
     };
@@ -406,6 +436,11 @@ export default function Pago() {
     selectedBuses,
     skipBus,
     totalBuses,
+    asientosIda,
+    asientosVuelta,
+    costoAsientosIda,
+    costoAsientosVuelta,
+    costoTotalAsientos,
     passengerData,
     isRT,
   ]);
@@ -430,7 +465,7 @@ export default function Pago() {
   }
 
   /* =========================
-     Pago - Envía vueloIda y vueloVuelta por separado
+     Pago - Envía vueloIda y vueloVuelta por separado + ASIENTOS
   ========================= */
   const handlePayment = async () => {
     try {
@@ -487,7 +522,26 @@ export default function Pago() {
         precioAdulto: Number(bus.precioAdulto) || 0,
       }));
 
-      // Construir payload con vueloIda y vueloVuelta separados
+      // NUEVO: Preparar datos de asientos
+      const asientosData = {
+        asientosIda: resumen.asientosIda.map(a => ({
+          numero: a.numero,
+          tipo: a.tipo,
+          precio: Number(a.precio || 0),
+          caracteristicas: a.caracteristicas || []
+        })),
+        asientosVuelta: resumen.asientosVuelta.map(a => ({
+          numero: a.numero,
+          tipo: a.tipo,
+          precio: Number(a.precio || 0),
+          caracteristicas: a.caracteristicas || []
+        })),
+        costoAsientosIda: resumen.costoAsientosIda,
+        costoAsientosVuelta: resumen.costoAsientosVuelta,
+        costoTotalAsientos: resumen.costoTotalAsientos
+      };
+
+      // Construir payload con vueloIda y vueloVuelta separados + asientos
       const payload = {
         pasajero: {
           nombre: resumen.pasajero.nombre,
@@ -500,8 +554,9 @@ export default function Pago() {
           numeroDocumento: resumen.pasajero.numeroDocumento,
         },
         vueloIda: vueloIdaData,
-        vueloVuelta: vueloVueltaData,  // null si no hay vuelta
+        vueloVuelta: vueloVueltaData,
         buses: busesData,
+        asientos: asientosData, // NUEVO: Datos de asientos
         total: Number(resumen.total) || 0,
         metodoPago: selectedPaymentMethod,
       };
@@ -512,7 +567,10 @@ export default function Pago() {
       console.log('Vuelo Ida:', payload.vueloIda?.idViaje, `(${payload.vueloIda?.origen} → ${payload.vueloIda?.destino})`);
       console.log('Vuelo Vuelta:', payload.vueloVuelta?.idViaje || 'N/A', payload.vueloVuelta ? `(${payload.vueloVuelta?.origen} → ${payload.vueloVuelta?.destino})` : '');
       console.log('Buses:', payload.buses.length);
-      console.log('Total:', payload.total);
+      console.log('Asientos Ida:', payload.asientos.asientosIda.map(a => a.numero).join(', ') || 'Ninguno');
+      console.log('Asientos Vuelta:', payload.asientos.asientosVuelta.map(a => a.numero).join(', ') || 'Ninguno');
+      console.log('Costo Asientos:', CLP(payload.asientos.costoTotalAsientos));
+      console.log('Total:', CLP(payload.total));
       console.log('Método de pago:', payload.metodoPago);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -533,9 +591,12 @@ export default function Pago() {
         vueloIda: payload.vueloIda,
         vueloVuelta: payload.vueloVuelta,
         buses: payload.buses,
+        asientos: payload.asientos,
+        total: payload.total, // ✅ Ahora incluye el total completo
       };
 
       console.log('💳 Payload para gateway de pago:', paymentPayload);
+      console.log('💰 Total a cobrar:', CLP(paymentPayload.total));
 
       if (selectedPaymentMethod === "stripe") {
         const r = await axios.post(
@@ -880,7 +941,6 @@ export default function Pago() {
                                       {bus.tiempoEspera}
                                     </div>
                                   )}
-                                  {/* NUEVO: Botón de ver detalles */}
                                   <button
                                     onClick={() => cargarDetalleBus(bus.idViaje)}
                                     disabled={loadingBusDetalle}
@@ -1045,7 +1105,7 @@ export default function Pago() {
                 ))}
               </div>
 
-              {/* Resumen total */}
+              {/* Resumen total con ASIENTOS */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h3 className="font-bold text-gray-900 mb-3">Resumen de tu reserva</h3>
                 <div className="space-y-2 text-sm">
@@ -1064,6 +1124,26 @@ export default function Pago() {
                         Vuelo (vuelta) – {resumen.vueloVuelta.origen} → {resumen.vueloVuelta.destino} · {resumen.vueloVuelta.tarifaNombre}
                       </span>
                       <span className="font-semibold">{CLP(resumen.vueloVuelta.precio)}</span>
+                    </div>
+                  )}
+
+                  {/* NUEVO: Mostrar asientos de ida */}
+                  {resumen.asientosIda && resumen.asientosIda.length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        Asientos (ida) – {resumen.asientosIda.map(a => a.numero).join(', ')}
+                      </span>
+                      <span className="font-semibold">{CLP(resumen.costoAsientosIda)}</span>
+                    </div>
+                  )}
+
+                  {/* NUEVO: Mostrar asientos de vuelta */}
+                  {resumen.asientosVuelta && resumen.asientosVuelta.length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">
+                        Asientos (vuelta) – {resumen.asientosVuelta.map(a => a.numero).join(', ')}
+                      </span>
+                      <span className="font-semibold">{CLP(resumen.costoAsientosVuelta)}</span>
                     </div>
                   )}
 

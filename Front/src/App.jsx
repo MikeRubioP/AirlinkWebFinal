@@ -35,7 +35,7 @@ import {
   RequireFlightOut,
   RequireReturnIfRoundTrip,
   RequireCheckoutReady,
-  RequirePaymentDone,      
+  // RequirePaymentDone ya no se usa - se eliminó de /pago-exitoso
 } from "./Components/Guards";
 
 export default function App() {
@@ -56,8 +56,6 @@ export default function App() {
                 <Route path="/sobre-nosotros" element={<SobreNosotros />} />
 
                 {/* ===== Búsqueda de vuelos ===== */}
-                {/* Si quieres impedir entrar a /vuelos/buscar sin haber buscado antes,
-                    deja RequireSearch. Si deseas dejarlo libre, quítalo. */}
                 <Route
                   path="/vuelos/buscar"
                   element={
@@ -87,8 +85,7 @@ export default function App() {
                   }
                 />
 
-                {/* Detalle: requiere ida (y, si es RT, también vuelta/ tarifa de vuelta).
-                   Si no cumple, manda a Home. */}
+                {/* Detalle: requiere ida (y, si es RT, también vuelta/ tarifa de vuelta) */}
                 <Route
                   path="/vuelos/detalleviaje"
                   element={
@@ -100,8 +97,7 @@ export default function App() {
                   }
                 />
 
-                {/* Pago: asegura que todo el flujo previo esté listo.
-                   Si algo falta, redirige a Home. */}
+                {/* Pago: asegura que todo el flujo previo esté listo */}
                 <Route
                   path="/pago"
                   element={
@@ -115,20 +111,9 @@ export default function App() {
                   }
                 />
 
-                <Route
-                  path="/pago-exitoso"
-                  element={
-                    <RequireFlightOut redirectTo="/">
-                      <RequireReturnIfRoundTrip redirectTo="/">
-                        <RequirePaymentDone redirectTo="/">
-                          <PagoExitoso />
-                        </RequirePaymentDone>
-                      </RequireReturnIfRoundTrip>
-                    </RequireFlightOut>
-                  }
-                />
+                <Route path="/pago-exitoso" element={<PagoExitoso />} />
 
-                {/* Cliente autenticado (si luego quieres protegerlos, envuelve con RequireAuth redirectTo="/") */}
+                {/* Cliente autenticado */}
                 <Route path="/mis-viajes" element={<MisViajes />} />
                 <Route path="/checkin" element={<CheckIn />} />
                 <Route path="/mi-cuenta" element={<MiCuenta />} />

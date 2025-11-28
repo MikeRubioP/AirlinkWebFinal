@@ -1,4 +1,4 @@
-// integrations/pagos.routes.js - VERSIÓN MEJORADA
+// integrations/pagos.routes.js - VERSIÓN CORREGIDA CON ASIENTOS
 import express from "express";
 import Stripe from "stripe";
 import paypal from "@paypal/checkout-server-sdk";
@@ -43,19 +43,19 @@ function generarCodigoReserva() {
 }
 
 // ========================================
-// CREAR RESERVA EN LA BASE DE DATOS (MEJORADO)
+// CREAR RESERVA EN LA BASE DE DATOS (CON ASIENTOS)
 // ========================================
 router.post("/crear-reserva", async (req, res) => {
   const db = req.app.get("db");
   
-  // ✅ CAMBIO: Acepta vuelo, vueloIda/vueloVuelta, o vuelos[]
   const { 
     pasajero, 
-    vuelo = null,           // Formato antiguo
-    vueloIda = null,        // Formato nuevo
-    vueloVuelta = null,     // Formato nuevo
-    vuelos = [],            // Formato array
-    buses = [], 
+    vuelo = null,
+    vueloIda = null,
+    vueloVuelta = null,
+    vuelos = [],
+    buses = [],
+    asientos = null, // ✅ NUEVO: Recibir asientos
     total, 
     metodoPago 
   } = req.body;
@@ -71,6 +71,9 @@ router.post("/crear-reserva", async (req, res) => {
     console.log('Vuelo Vuelta:', vueloVuelta?.idViaje);
     console.log('Vuelos (array):', vuelos.length);
     console.log('Buses:', buses.length);
+    console.log('Asientos Ida:', asientos?.asientosIda?.length || 0); // ✅ NUEVO
+    console.log('Asientos Vuelta:', asientos?.asientosVuelta?.length || 0); // ✅ NUEVO
+    console.log('Costo Total Asientos:', asientos?.costoTotalAsientos || 0); // ✅ NUEVO
     console.log('Total:', total);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -82,22 +85,19 @@ router.post("/crear-reserva", async (req, res) => {
       });
     }
 
-    // ✅ CAMBIO: Construir array de vuelos desde cualquier formato
+    // Construir array de vuelos desde cualquier formato
     let vuelosArray = [];
     
     if (vuelos && vuelos.length > 0) {
-      // Formato: vuelos[]
       vuelosArray = vuelos;
       console.log('✅ Usando formato vuelos[] con', vuelos.length, 'vuelos');
     } else if (vueloIda) {
-      // Formato: vueloIda/vueloVuelta
       vuelosArray.push(vueloIda);
       if (vueloVuelta) {
         vuelosArray.push(vueloVuelta);
       }
       console.log('✅ Usando formato vueloIda/vueloVuelta con', vuelosArray.length, 'vuelos');
     } else if (vuelo) {
-      // Formato antiguo: vuelo singular
       vuelosArray.push(vuelo);
       console.log('✅ Usando formato vuelo singular');
     }
@@ -201,26 +201,13 @@ router.post("/crear-reserva", async (req, res) => {
     console.log(`✅ Pasajero creado con ID: ${pasajeroResult.insertId}`);
 
     // ===== INSERTAR DETALLES DE VUELOS (OPCIONAL) =====
-    // Si tienes una tabla para detalles de vuelos, inserta aquí
     for (const vueloItem of vuelosArray) {
       console.log(`📝 Procesando vuelo:`, vueloItem.idViaje, `(${vueloItem.origen} → ${vueloItem.destino})`);
-      
-      // Ejemplo: Si tienes tabla reserva_detalle o similar
-      // await connection.query(
-      //   `INSERT INTO reserva_detalle (idReserva, idViaje, tipo, precio) VALUES (?, ?, ?, ?)`,
-      //   [reservaId, vueloItem.idViaje, vueloItem.tipo || 'vuelo', vueloItem.precio]
-      // );
     }
 
     // ===== INSERTAR DETALLES DE BUSES (OPCIONAL) =====
     for (const bus of buses) {
       console.log(`📝 Procesando bus:`, bus.idViaje || bus.id, `(${bus.empresa})`);
-      
-      // Ejemplo: Si tienes tabla reserva_detalle o similar
-      // await connection.query(
-      //   `INSERT INTO reserva_detalle (idReserva, idViaje, tipo, precio) VALUES (?, ?, ?, ?)`,
-      //   [reservaId, bus.idViaje || bus.id, 'bus', bus.precioAdulto]
-      // );
     }
 
     // ===== REGISTRO DE PAGO PENDIENTE =====
@@ -246,6 +233,7 @@ router.post("/crear-reserva", async (req, res) => {
       debug: {
         vuelosProcesados: vuelosArray.length,
         busesProcesados: buses.length,
+        asientosProcesados: (asientos?.asientosIda?.length || 0) + (asientos?.asientosVuelta?.length || 0),
       }
     });
   } catch (error) {
@@ -261,7 +249,7 @@ router.post("/crear-reserva", async (req, res) => {
 });
 
 // ========================================
-// STRIPE - CREAR SESIÓN DE PAGO (MEJORADO)
+// STRIPE - CREAR SESIÓN DE PAGO (CON ASIENTOS)
 // ========================================
 router.post("/stripe/create-session", async (req, res) => {
   const { 
@@ -271,13 +259,22 @@ router.post("/stripe/create-session", async (req, res) => {
     vueloIda = null,
     vueloVuelta = null,
     vuelos = [],
-    buses = [] 
+    buses = [],
+    asientos = null, // ✅ NUEVO: Recibir asientos
+    total = null // ✅ NUEVO: Recibir total calculado
   } = req.body;
 
   try {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('💳 STRIPE - Payload recibido:');
+    console.log('Total recibido:', total);
+    console.log('Asientos:', asientos);
+    console.log('Costo asientos:', asientos?.costoTotalAsientos || 0);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
     const line_items = [];
 
-    // ✅ CAMBIO: Construir array de vuelos
+    // Construir array de vuelos
     let vuelosArray = [];
     if (vuelos && vuelos.length > 0) {
       vuelosArray = vuelos;
@@ -288,23 +285,49 @@ router.post("/stripe/create-session", async (req, res) => {
       vuelosArray.push(vuelo);
     }
 
-    // Agregar todos los vuelos
+    // ===== AGREGAR VUELOS =====
     for (const vueloItem of vuelosArray) {
       if (Number(vueloItem.precio) > 0) {
         line_items.push({
           price_data: {
             currency: "clp",
             product_data: {
-              name: `Vuelo ${vueloItem.origen} → ${vueloItem.destino} · ${vueloItem.tarifaNombre || 'Standard'}`,
+              name: `Vuelo ${vueloItem.origen} → ${vueloItem.destino}`,
+              description: `${vueloItem.empresa} · ${vueloItem.tarifaNombre || 'Standard'}`,
             },
             unit_amount: toUnitAmountCLP(vueloItem.precio),
           },
           quantity: 1,
         });
+        console.log(`✅ Vuelo agregado: ${vueloItem.origen} → ${vueloItem.destino} = ${vueloItem.precio}`);
       }
     }
 
-    // Agregar buses
+    // ===== AGREGAR ASIENTOS (NUEVO) =====
+    if (asientos && asientos.costoTotalAsientos > 0) {
+      const asientosIda = asientos.asientosIda || [];
+      const asientosVuelta = asientos.asientosVuelta || [];
+      const todosLosAsientos = [...asientosIda, ...asientosVuelta];
+      
+      if (todosLosAsientos.length > 0) {
+        const numerosAsientos = todosLosAsientos.map(a => a.numero).join(', ');
+        
+        line_items.push({
+          price_data: {
+            currency: "clp",
+            product_data: {
+              name: `Selección de Asientos`,
+              description: `Asientos: ${numerosAsientos}`,
+            },
+            unit_amount: toUnitAmountCLP(asientos.costoTotalAsientos),
+          },
+          quantity: 1,
+        });
+        console.log(`✅ Asientos agregados: ${numerosAsientos} = ${asientos.costoTotalAsientos}`);
+      }
+    }
+
+    // ===== AGREGAR BUSES =====
     for (const b of buses || []) {
       const amount = toUnitAmountCLP(b.precioAdulto);
       if (amount <= 0) continue;
@@ -322,21 +345,35 @@ router.post("/stripe/create-session", async (req, res) => {
         },
         quantity: 1,
       });
+      console.log(`✅ Bus agregado: ${b.empresa} = ${b.precioAdulto}`);
     }
 
     if (line_items.length === 0) {
       return res.status(400).json({ error: "No hay items para cobrar." });
     }
 
+    // ===== CALCULAR TOTAL DE LINE ITEMS =====
+    const totalLineItems = line_items.reduce((sum, item) => 
+      sum + (item.price_data.unit_amount * item.quantity), 0
+    );
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📊 RESUMEN STRIPE:');
+    console.log('Total de line_items:', totalLineItems);
+    console.log('Total esperado:', total);
+    console.log('Coinciden:', totalLineItems === total ? '✅' : '❌');
+    console.log('Line items a enviar:', line_items.length);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
       line_items,
       customer_email: pasajero?.correo,
-      success_url: `http://localhost:5173/pago-exitoso?reservaId=${encodeURIComponent(
+      success_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago-exitoso?reservaId=${encodeURIComponent(
         reservaId
       )}&status=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `http://localhost:5173/pago?status=cancel&reservaId=${encodeURIComponent(
+      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago?status=cancel&reservaId=${encodeURIComponent(
         reservaId
       )}`,
       metadata: {
@@ -344,14 +381,18 @@ router.post("/stripe/create-session", async (req, res) => {
         pasajeroNombre: pasajero
           ? `${pasajero.nombre || ""} ${pasajero.apellido || ""}`.trim()
           : "",
+        totalEsperado: String(total || 0),
       },
     });
+
+    console.log('✅ Sesión de Stripe creada exitosamente');
+    console.log('URL:', session.url);
 
     res
       .status(200)
       .json({ success: true, sessionId: session.id, url: session.url });
   } catch (error) {
-    console.error("Error en Stripe:", error);
+    console.error("❌ Error en Stripe:", error);
     res
       .status(500)
       .json({
@@ -362,7 +403,7 @@ router.post("/stripe/create-session", async (req, res) => {
 });
 
 // ========================================
-// MERCADO PAGO - CREAR PREFERENCIA (MEJORADO)
+// MERCADO PAGO - CREAR PREFERENCIA (CON ASIENTOS)
 // ========================================
 router.post("/mercadopago/create-preference", async (req, res) => {
   try {
@@ -371,10 +412,13 @@ router.post("/mercadopago/create-preference", async (req, res) => {
       vueloIda = null,
       vueloVuelta = null,
       vuelos = [],
-      buses = [], 
+      buses = [],
+      asientos = null, // ✅ NUEVO
       reservaId, 
       pasajero 
     } = req.body;
+
+    console.log('💳 MERCADOPAGO - Asientos recibidos:', asientos?.costoTotalAsientos || 0);
 
     // Construir array de vuelos
     let vuelosArray = [];
@@ -411,6 +455,26 @@ router.post("/mercadopago/create-preference", async (req, res) => {
       }
     }
 
+    // ===== AGREGAR ASIENTOS (NUEVO) =====
+    if (asientos && asientos.costoTotalAsientos > 0) {
+      const asientosIda = asientos.asientosIda || [];
+      const asientosVuelta = asientos.asientosVuelta || [];
+      const todosLosAsientos = [...asientosIda, ...asientosVuelta];
+      
+      if (todosLosAsientos.length > 0) {
+        const numerosAsientos = todosLosAsientos.map(a => a.numero).join(', ');
+        
+        items.push({
+          title: `Selección de Asientos`,
+          description: `Asientos: ${numerosAsientos}`,
+          quantity: 1,
+          currency_id: "CLP",
+          unit_price: Number(asientos.costoTotalAsientos),
+        });
+        console.log(`✅ MP - Asientos agregados: ${numerosAsientos} = ${asientos.costoTotalAsientos}`);
+      }
+    }
+
     // Agregar buses
     for (const b of buses || []) {
       items.push({
@@ -424,9 +488,9 @@ router.post("/mercadopago/create-preference", async (req, res) => {
     const preferenceData = {
       items,
       back_urls: {
-        success: `http://localhost:5173/pago-exitoso?reservaId=${reservaId}&status=success`,
-        failure: `http://localhost:5173/pago-exitoso?reservaId=${reservaId}&status=failure`,
-        pending: `http://localhost:5173/pago-exitoso?reservaId=${reservaId}&status=pending`,
+        success: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago-exitoso?reservaId=${reservaId}&status=success`,
+        failure: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago-exitoso?reservaId=${reservaId}&status=failure`,
+        pending: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago-exitoso?reservaId=${reservaId}&status=pending`,
       },
       external_reference: String(reservaId),
       statement_descriptor: "AIRLINK",
@@ -454,7 +518,7 @@ router.post("/mercadopago/create-preference", async (req, res) => {
 });
 
 // ========================================
-// PAYPAL - CREAR ORDEN (MEJORADO)
+// PAYPAL - CREAR ORDEN (CON ASIENTOS)
 // ========================================
 router.post("/paypal/create-order", async (req, res) => {
   const { 
@@ -462,12 +526,15 @@ router.post("/paypal/create-order", async (req, res) => {
     vueloIda = null,
     vueloVuelta = null,
     vuelos = [],
-    buses = [], 
+    buses = [],
+    asientos = null, // ✅ NUEVO
     reservaId, 
     pasajero 
   } = req.body;
 
   try {
+    console.log('💳 PAYPAL - Asientos recibidos:', asientos?.costoTotalAsientos || 0);
+
     // Construir array de vuelos
     let vuelosArray = [];
     if (vuelos && vuelos.length > 0) {
@@ -503,6 +570,29 @@ router.post("/paypal/create-order", async (req, res) => {
       }
     }
 
+    // ===== AGREGAR ASIENTOS (NUEVO) =====
+    if (asientos && asientos.costoTotalAsientos > 0) {
+      const asientosIda = asientos.asientosIda || [];
+      const asientosVuelta = asientos.asientosVuelta || [];
+      const todosLosAsientos = [...asientosIda, ...asientosVuelta];
+      
+      if (todosLosAsientos.length > 0) {
+        const numerosAsientos = todosLosAsientos.map(a => a.numero).join(', ');
+        totalCLP += Number(asientos.costoTotalAsientos);
+        
+        items.push({
+          name: `Selección de Asientos`,
+          description: `Asientos: ${numerosAsientos}`,
+          unit_amount: {
+            currency_code: "USD",
+            value: (Number(asientos.costoTotalAsientos) / conversionRate).toFixed(2),
+          },
+          quantity: "1",
+        });
+        console.log(`✅ PayPal - Asientos agregados: ${numerosAsientos} = ${asientos.costoTotalAsientos}`);
+      }
+    }
+
     // Agregar buses
     for (const b of buses || []) {
       totalCLP += Number(b.precioAdulto || 0);
@@ -522,6 +612,8 @@ router.post("/paypal/create-order", async (req, res) => {
 
     const totalUSD = (totalCLP / conversionRate).toFixed(2);
 
+    console.log('✅ PayPal - Total CLP:', totalCLP, 'Total USD:', totalUSD);
+
     const request = new paypal.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
@@ -540,8 +632,8 @@ router.post("/paypal/create-order", async (req, res) => {
         },
       ],
       application_context: {
-        return_url: `http://localhost:5173/pago-exitoso?reservaId=${reservaId}&status=success`,
-        cancel_url: `http://localhost:5173/pago?status=cancel&reservaId=${reservaId}`,
+        return_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago-exitoso?reservaId=${reservaId}&status=success`,
+        cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pago?status=cancel&reservaId=${reservaId}`,
         brand_name: "AirLink",
         user_action: "PAY_NOW",
       },

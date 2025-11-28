@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import Swal from "sweetalert2"; // ✅ Import SweetAlert2
+import Swal from "sweetalert2";
 import Footer from "../../Components/Footer";
 
 export default function Cupones() {
@@ -70,7 +70,7 @@ export default function Cupones() {
     []
   );
 
-  // ✅ Nueva función con SweetAlert2
+  // ✅ Función actualizada con mensaje mejorado
   const copy = async (txt) => {
     try {
       await navigator.clipboard.writeText(txt);
@@ -78,11 +78,11 @@ export default function Cupones() {
 
       Swal.fire({
         title: "¡Código copiado!",
-        text: `El cupón ${txt} se ha copiado correctamente 🎉`,
+        text: `El cupón ${txt} se ha copiado. Úsalo al momento de pagar 🎉`,
         icon: "success",
         confirmButtonText: "Aceptar",
         confirmButtonColor: "#7C3AED",
-        timer: 2000,
+        timer: 2500,
         timerProgressBar: true,
       });
 
@@ -131,8 +131,6 @@ export default function Cupones() {
           ))}
         </div>
       </section>
-
-
     </div>
   );
 }
@@ -151,11 +149,12 @@ function CouponCategoryCard({ category, onCopy, copied }) {
         </div>
       </div>
 
+      {/* ✅ CAMBIO: Texto del botón actualizado */}
       <button
         onClick={onCopy}
         className="w-full py-3 bg-violet-600 text-white rounded-full hover:bg-violet-700 transition font-semibold mb-6"
       >
-        {copied ? "¡Código copiado!" : "Usar cupón"}
+        {copied ? "¡Código copiado!" : "Copiar código"}
       </button>
 
       <div className="mb-6">
