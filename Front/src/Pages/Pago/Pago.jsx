@@ -39,7 +39,7 @@ const detectarMock = (vuelo) => {
 const generarBusesMock = (origen, fecha, horaLlegada) => {
   const empresas = [
     { nombre: 'Turbus', color: 'bg-blue-600' },
-    { nombre: 'Pullman Bus', color: 'bg-green-600' },
+    { nombre: 'Pullman Bus', color: 'bg-green-500' },
     { nombre: 'Buses JAC', color: 'bg-red-600' },
     { nombre: 'Condor Bus', color: 'bg-yellow-600' },
   ];
@@ -1161,7 +1161,14 @@ export default function Pago() {
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-3">
-                                  <div className={`${bus.color || "bg-purple-600"} text-white px-3 py-1 rounded font-bold text-xs`}>
+                                  <div
+                                    className="text-white px-3 py-1 rounded font-bold text-xs inline-block"
+                                    style={{
+                                      backgroundColor: typeof bus.color === 'string'
+                                        ? bus.color
+                                        : (bus.color?.hex || bus.color?.color || '#9333ea')
+                                    }}
+                                  >
                                     {bus.empresa}
                                   </div>
                                   {bus.tiempoEspera && (
