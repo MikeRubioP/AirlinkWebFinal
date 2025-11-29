@@ -508,6 +508,18 @@ export default function Pago() {
     setError("");
   };
 
+  const formatearFechaEspanol = (fechaString) => {
+    if (!fechaString) return 'Fecha no disponible';
+
+    try {
+      // Si viene en formato YYYY-MM-DD
+      const [year, month, day] = fechaString.split('-');
+      return `${day}/${month}`;
+    } catch (error) {
+      return fechaString;
+    }
+  };
+
   const total = useMemo(() =>
     totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos,
     [totalVuelo, totalBuses, skipBus, costoTotalAsientos]
@@ -1188,8 +1200,8 @@ export default function Pago() {
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-4 text-sm mb-2">
-                                  <div>
-                                    <div className="text-xs text-gray-500 mb-1">📅 {bus.fechaSalida}</div>
+                                  <div className="text-xs text-gray-500 mb-1">
+                                    📅 {formatearFechaEspanol(bus.fechaCompleta || bus.fechaSalida)}
                                   </div>
                                   <div>
                                     <div className="font-semibold text-gray-900">{bus.horaSalida}</div>
