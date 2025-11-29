@@ -1,4 +1,5 @@
 // integrations/cupones.routes.js
+// ADAPTADO para usar la tabla cupon_descuento EXISTENTE
 import express from "express";
 
 const router = express.Router();
@@ -6,6 +7,9 @@ const router = express.Router();
 /**
  * POST /api/cupones/validar
  * Valida un cupón y devuelve el descuento si es válido
+ * 
+ * IMPORTANTE: El descuento se aplica al TOTAL GLOBAL
+ * (vuelos + asientos + buses)
  */
 router.post("/validar", async (req, res) => {
   const db = req.app.get("db");
@@ -27,27 +31,21 @@ router.post("/validar", async (req, res) => {
       });
     }
 
-    // 1. Buscar el cupón
+    // 1. Buscar el cupón (usando solo los campos que existen en tu tabla)
     const [cupones] = await db.query(
       `SELECT 
-        idCuponDescuento,
-        codigo,
-        nombre,
-        descripcion,
-        valor,
-        tipo_descuento,
-        uso_maximo,
-        uso_actual,
-        uso_maximo_por_usuario,
-        monto_minimo_compra,
-        fecha_inicio,
-        fecha_fin,
-        activo,
-        aplica_vuelos,
-        aplica_buses,
-        aplica_asientos
-      FROM cupon_descuento 
-      WHERE codigo = ?`,
+        cd.idCuponDescuento,
+        cd.codigo,
+        cd.valor,
+        cd.uso_maximo,
+        cd.uso_actual,
+        cd.fecha_inicio,
+        cd.fecha_fin,
+        cd.activo,
+        tc.nombreTipoCupon
+      FROM cupon_descuento cd
+      JOIN tipo_cupon tc ON cd.idTipoCupon = tc.idTipoCupon
+      WHERE cd.codigo = ?`,
       [codigo.trim().toUpperCase()]
     );
 
@@ -60,7 +58,7 @@ router.post("/validar", async (req, res) => {
     }
 
     const cupon = cupones[0];
-    console.log('✅ Cupón encontrado:', cupon.nombre);
+    console.log('✅ Cupón encontrado:', cupon.codigo);
 
     // 2. Verificar si está activo
     if (!cupon.activo) {
@@ -92,7 +90,7 @@ router.post("/validar", async (req, res) => {
       });
     }
 
-    // 4. Verificar si tiene usos disponibles (si tiene límite)
+    // 4. Verificar si tiene usos disponibles (si uso_maximo no es NULL)
     if (cupon.uso_maximo !== null && cupon.uso_actual >= cupon.uso_maximo) {
       console.log('❌ Cupón agotado');
       return res.status(400).json({
@@ -101,7 +99,7 @@ router.post("/validar", async (req, res) => {
       });
     }
 
-    // 5. Verificar si el usuario ya lo usó
+    // 5. Verificar si el usuario ya lo usó (máximo 1 vez por usuario)
     const [usosUsuario] = await db.query(
       `SELECT COUNT(*) as usos 
        FROM cupon_usuario 
@@ -109,7 +107,7 @@ router.post("/validar", async (req, res) => {
       [cupon.idCuponDescuento, email.toLowerCase()]
     );
 
-    if (usosUsuario[0].usos >= cupon.uso_maximo_por_usuario) {
+    if (usosUsuario[0].usos >= 1) {
       console.log('❌ Usuario ya usó el cupón');
       return res.status(400).json({
         valido: false,
@@ -117,22 +115,9 @@ router.post("/validar", async (req, res) => {
       });
     }
 
-    // 6. Verificar monto mínimo de compra
-    if (Number(totalCompra) < Number(cupon.monto_minimo_compra)) {
-      console.log('❌ No alcanza el monto mínimo');
-      return res.status(400).json({
-        valido: false,
-        mensaje: `Este cupón requiere una compra mínima de $${Number(cupon.monto_minimo_compra).toLocaleString('es-CL')}`,
-      });
-    }
-
-    // 7. Calcular el descuento
-    let descuento = 0;
-    if (cupon.tipo_descuento === 'fijo') {
-      descuento = Number(cupon.valor);
-    } else if (cupon.tipo_descuento === 'porcentaje') {
-      descuento = (Number(totalCompra) * Number(cupon.valor)) / 100;
-    }
+    // 6. Calcular el descuento (SIEMPRE es descuento fijo en tu caso)
+    // El descuento se aplica al TOTAL GLOBAL (vuelos + asientos + buses)
+    let descuento = Number(cupon.valor);
 
     // No permitir que el descuento sea mayor que el total
     if (descuento > Number(totalCompra)) {
@@ -143,18 +128,18 @@ router.post("/validar", async (req, res) => {
 
     console.log('✅ Cupón válido');
     console.log('Descuento:', descuento);
+    console.log('Total Original:', totalCompra);
     console.log('Total Final:', totalFinal);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-    // 8. Devolver respuesta exitosa
+    // 7. Devolver respuesta exitosa
     res.json({
       valido: true,
       mensaje: `Cupón ${cupon.codigo} aplicado correctamente`,
       cupon: {
         idCuponDescuento: cupon.idCuponDescuento,
         codigo: cupon.codigo,
-        nombre: cupon.nombre,
-        tipo: cupon.tipo_descuento,
+        tipo: cupon.nombreTipoCupon,
         valorOriginal: Number(cupon.valor),
       },
       descuento: descuento,
@@ -213,7 +198,7 @@ router.post("/aplicar", async (req, res) => {
     const [cupones] = await connection.query(
       `SELECT idCuponDescuento, uso_actual 
        FROM cupon_descuento 
-       WHERE codigo = ? AND activo = TRUE`,
+       WHERE codigo = ? AND activo = 1`,
       [codigo.trim().toUpperCase()]
     );
 
@@ -251,16 +236,21 @@ router.post("/aplicar", async (req, res) => {
       [cupon.idCuponDescuento]
     );
 
-    // 4. Si hay idReserva, registrar en reserva_cupon
+    // 4. Si hay idReserva, registrar en reserva_cupon (si esa tabla existe)
     if (idReserva) {
-      await connection.query(
-        `INSERT INTO reserva_cupon (
-          idReserva,
-          idCuponDescuento,
-          montoAplicado
-        ) VALUES (?, ?, ?)`,
-        [idReserva, cupon.idCuponDescuento, montoDescuento]
-      );
+      try {
+        await connection.query(
+          `INSERT INTO reserva_cupon (
+            idReserva,
+            idCuponDescuento,
+            montoAplicado
+          ) VALUES (?, ?, ?)`,
+          [idReserva, cupon.idCuponDescuento, montoDescuento]
+        );
+      } catch (e) {
+        // Si la tabla no existe, continuar sin error
+        console.log('⚠️ Tabla reserva_cupon no existe o error:', e.message);
+      }
     }
 
     await connection.commit();
@@ -288,7 +278,7 @@ router.post("/aplicar", async (req, res) => {
 
 /**
  * GET /api/cupones/activos
- * Obtiene todos los cupones activos y vigentes (opcional, para mostrar en /cupones)
+ * Obtiene todos los cupones activos y vigentes
  */
 router.get("/activos", async (req, res) => {
   const db = req.app.get("db");
@@ -296,30 +286,25 @@ router.get("/activos", async (req, res) => {
   try {
     const [cupones] = await db.query(
       `SELECT 
-        codigo,
-        nombre,
-        descripcion,
-        valor,
-        tipo_descuento,
-        monto_minimo_compra,
-        fecha_fin,
-        uso_maximo,
-        uso_actual
-      FROM cupon_descuento 
-      WHERE activo = TRUE 
-      AND fecha_fin >= CURDATE()
-      ORDER BY valor DESC`
+        cd.codigo,
+        cd.valor,
+        cd.fecha_fin,
+        cd.uso_maximo,
+        cd.uso_actual,
+        tc.nombreTipoCupon
+      FROM cupon_descuento cd
+      JOIN tipo_cupon tc ON cd.idTipoCupon = tc.idTipoCupon
+      WHERE cd.activo = 1 
+      AND cd.fecha_fin >= CURDATE()
+      ORDER BY cd.valor DESC`
     );
 
     res.json({
       success: true,
       cupones: cupones.map(c => ({
         codigo: c.codigo,
-        nombre: c.nombre,
-        descripcion: c.descripcion,
         descuento: Number(c.valor),
-        tipoDescuento: c.tipo_descuento,
-        montoMinimo: Number(c.monto_minimo_compra),
+        tipo: c.nombreTipoCupon,
         fechaVencimiento: c.fecha_fin,
         usosDisponibles: c.uso_maximo ? (c.uso_maximo - c.uso_actual) : null,
       })),

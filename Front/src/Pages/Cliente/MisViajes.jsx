@@ -6,9 +6,9 @@ import QrButton from "../../Components/QrButton";
 const BRAND = "#7C4DFF";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5174";
 
-/** LISTA DE VIAJES (PROTEGIDA) */
+/** LISTA DE VIAJES (PROTEGIDA - USA TABLA USUARIO) */
 export default function MisViajes() {
-  const { token } = useAuth?.() || {};
+  const { user, token } = useAuth?.() || {};
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -25,284 +25,329 @@ export default function MisViajes() {
       setLoading(true);
       setErr("");
       try {
-        const res = await fetch(`${API_URL}/api/reservas/mias`, {
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (alive) setReservas(Array.isArray(data) ? data : []);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🔍 MIS VIAJES - Intentando obtener reservas');
+        console.log('Usuario:', user);
+        console.log('Token:', token ? 'Sí' : 'No');
+        console.log('Email del usuario:', user?.email);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+        // ✅ PRIORIDAD 1: Usar usuario autenticado (desde AuthContext)
+        if (user?.email) {
+          console.log('✅ Usuario autenticado encontrado:', user.email);
+          
+          const res = await fetch(
+            `${API_URL}/api/reservas/mias?email=${encodeURIComponent(user.email)}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+            }
+          );
+
+          if (!res.ok) {
+            throw new Error(`Error ${res.status}: ${res.statusText}`);
+          }
+
+          const data = await res.json();
+          
+          if (alive) {
+            setReservas(Array.isArray(data) ? data : []);
+            console.log(`✅ ${data.length} reservas obtenidas desde BD`);
+          }
+          
+          return; // Salir si se usó usuario autenticado
+        }
+
+        // ✅ PRIORIDAD 2: Si NO hay usuario autenticado, redirigir a login
+        console.log('❌ No hay usuario autenticado');
+        setErr("Debes iniciar sesión para ver tus viajes.");
+        setReservas([]);
+        
+        // Redirigir a login después de 2 segundos
+        setTimeout(() => {
+          navigate('/login');
+        }, 2000);
+
       } catch (e) {
         if (alive) {
-          console.warn("Usando mock de MisViajes:", e?.message || e);
-          setReservas(MOCK_RESERVAS);
+          console.error("❌ Error al obtener reservas:", e);
+          setErr(`Error al cargar tus viajes: ${e.message}`);
+          setReservas([]);
         }
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, [token]);
+  }, [user, token, navigate]);
 
-  const hoyISO = new Date().toISOString();
+  // Filtrar reservas
+  const reservasFiltradas = useMemo(() => {
+    if (!reservas || reservas.length === 0) return [];
 
-  const filtradas = useMemo(() => {
-    let list = reservas.slice();
+    let filtered = reservas;
 
+    // Por query
     if (q.trim()) {
-      const term = q.trim().toLowerCase();
-      list = list.filter((r) =>
-        [r.codigo, r.origen, r.destino, r.pasajero]
-          .filter(Boolean)
-          .some((s) => String(s).toLowerCase().includes(term))
-      );
+      const lower = q.toLowerCase();
+      filtered = filtered.filter((r) => {
+        const txt = [
+          r.codigo || "",
+          r.pasajero || "",
+          r.origen || "",
+          r.destino || "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return txt.includes(lower);
+      });
     }
 
-    if (estado === "proximos") {
-      list = list.filter((r) => r.salidaIso > hoyISO);
-    } else if (estado === "pasados") {
-      list = list.filter((r) => r.salidaIso <= hoyISO);
+    // Por estado (próximos/pasados)
+    if (estado !== "todos") {
+      const ahora = new Date();
+      filtered = filtered.filter((r) => {
+        const salida = new Date(r.salidaIso);
+        if (estado === "proximos") {
+          return salida >= ahora;
+        } else {
+          return salida < ahora;
+        }
+      });
     }
 
-    list.sort((a, b) => a.salidaIso.localeCompare(b.salidaIso));
-    return list;
-  }, [reservas, q, estado, hoyISO]);
+    return filtered;
+  }, [reservas, q, estado]);
 
-  return (
-    <div className="min-h-screen bg-[#F7F7FB]">
-      <header className="max-w-7xl mx-auto px-6 pt-8 pb-4">
-        <h1 className="text-2xl md:text-3xl font-extrabold">Mis viajes</h1>
-        <p className="text-[#5c5c66] mt-1">
-          Consulta tus reservas, realiza check-in y descarga pases de abordar.
-        </p>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 pb-16">
-        {/* Filtros */}
-        <div className="rounded-2xl bg-white border border-[#E7E7ED] p-4 md:p-5 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-          <div className="flex gap-2">
-            <button
-              className={tabCls(estado === "todos")}
-              onClick={() => setEstado("todos")}
-            >
-              Todos
-            </button>
-            <button
-              className={tabCls(estado === "proximos")}
-              onClick={() => setEstado("proximos")}
-            >
-              Próximos
-            </button>
-            <button
-              className={tabCls(estado === "pasados")}
-              onClick={() => setEstado("pasados")}
-            >
-              Pasados
-            </button>
-          </div>
-          <div className="flex-1 md:max-w-sm">
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por código, ciudad o pasajero…"
-              className="w-full border rounded-xl px-4 py-2"
-            />
-          </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
+          <p className="text-gray-600">Cargando tus viajes...</p>
         </div>
-
-        {/* estados */}
-        {loading && <div className="mt-8 text-[#5c5c66]">Cargando tus viajes…</div>}
-        {!loading && err && <div className="mt-8 text-red-600">Error: {err}</div>}
-        {!loading && !err && filtradas.length === 0 && (
-          <EmptyState onIrAExplorar={() => navigate("/")} />
-        )}
-
-        {/* lista */}
-        <section className="mt-6 grid gap-4">
-          {filtradas.map((r) => (
-            <ReservaCard
-              key={r.id}
-              r={r}
-              onCheckin={() => navigate("/checkin")}
-              onDetalle={() => navigate(`/mis-viajes/${r.id}`)}
-            />
-          ))}
-        </section>
-      </main>
-    </div>
-  );
-}
-
-/* ---------- Subcomponentes ---------- */
-
-function ReservaCard({ r, onCheckin, onDetalle }) {
-  const esPasado = new Date(r.salidaIso) <= new Date();
-  const puedeCheckin = !esPasado && r.permiteCheckin;
-
-  const qrPayload = {
-    reserva: r.codigo,
-    pasajero: r.pasajero,
-    vuelo: r.vuelo,
-    origen: r.origen,
-    destino: r.destino,
-    salidaIso: r.salidaIso,
-    hSalida: r.hSalida,
-    hLlegada: r.hLlegada,
-    tarifa: r.tarifa || "",
-    equipaje: r.equipaje || "",
-  };
-
-  return (
-    <article className="rounded-3xl border border-[#E7E7ED] bg-white p-5 md:p-6 flex flex-col md:flex-row md:items-center gap-4">
-      <div className="flex-1">
-        <div className="text-sm text-[#5c5c66]">Vuelo {r.vuelo}</div>
-        <div className="text-xl font-bold">
-          {r.origen} → {r.destino}
-        </div>
-        <div className="text-sm text-[#5c5c66]">
-          {fmtFecha(r.salidaIso)} · {r.hSalida} — {r.hLlegada}
-        </div>
-        <div className="mt-1 text-xs text-[#8A8A8E]">Código de reserva: {r.codigo}</div>
-        <div className="mt-1 text-xs text-[#8A8A8E]">Pasajero: {r.pasajero}</div>
       </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge>{esPasado ? "Finalizado" : "Próximo"}</Badge>
-        {r.equipaje && <Badge>Equipaje: {r.equipaje}</Badge>}
-        {r.tarifa && <Badge>{r.tarifa}</Badge>}
-      </div>
-
-      <div className="flex gap-2 md:ml-4">
-        <button
-          onClick={onDetalle}
-          className="px-4 py-2 rounded-xl border border-[#E7E7ED] bg-white hover:bg-[#fafafe]"
-        >
-          Ver detalle
-        </button>
-
-        {/* 🔳 BOTÓN VER QR (entre Ver detalle y el resto) */}
-        <QrButton
-          payload={qrPayload}
-          label="Ver QR"
-          className="px-4 py-2 rounded-xl border border-[#E7E7ED] bg-white hover:bg-[#fafafe]"
-        />
-
-        {r.paseUrl && (
-          <a
-            href={r.paseUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="px-4 py-2 rounded-xl border border-[#E7E7ED] bg-white hover:bg-[#fafafe]"
-          >
-            Descargar pase
-          </a>
-        )}
-        {puedeCheckin && (
-          <button
-            onClick={onCheckin}
-            className="px-4 py-2 rounded-xl text-white"
-            style={{ background: BRAND }}
-          >
-            Check-in
-          </button>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function EmptyState({ onIrAExplorar }) {
-  return (
-    <div className="mt-10 rounded-3xl border border-[#E7E7ED] bg-white p-10 text-center">
-      <div
-        className="mx-auto h-12 w-12 rounded-full grid place-items-center text-white mb-3"
-        style={{ background: BRAND }}
-      >
-        ✈
-      </div>
-      <h3 className="text-xl font-bold">Aún no tienes viajes</h3>
-      <p className="text-[#5c5c66] mt-1">
-        Cuando reserves, aparecerán aquí para que gestiones tu experiencia.
-      </p>
-      <button
-        onClick={onIrAExplorar}
-        className="mt-4 px-6 py-3 rounded-xl text-white"
-        style={{ background: BRAND }}
-      >
-        Explorar destinos
-      </button>
-    </div>
-  );
-}
-
-function Badge({ children }) {
-  return (
-    <span className="inline-flex text-xs font-semibold text-[#7C4DFF] bg-[#7C4DFF]/10 rounded-full px-2 py-0.5">
-      {children}
-    </span>
-  );
-}
-
-function tabCls(active) {
-  return `px-4 py-2 rounded-xl text-sm ${
-    active
-      ? "text-white bg-[#7C4DFF]"
-      : "text-[#5c5c66] border border-[#E7E7ED] bg-white hover:bg-[#fafafe]"
-  }`;
-}
-
-function fmtFecha(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("es-CL", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
+    );
   }
-}
 
-/* ----- Mock local (por si la API no está lista) ----- */
-const MOCK_RESERVAS = [
-  {
-    id: 1,
-    codigo: "ABCD12",
-    pasajero: "Juan Pérez",
-    vuelo: "AL 348",
-    origen: "SCL",
-    destino: "LIM",
-    salidaIso: addDaysISO(3),
-    hSalida: "08:30",
-    hLlegada: "10:40",
-    permiteCheckin: true,
-    equipaje: "1× mano",
-    tarifa: "Standard",
-    paseUrl: null,
-  },
-  {
-    id: 2,
-    codigo: "ZX98QW",
-    pasajero: "Juan Pérez",
-    vuelo: "AL 912",
-    origen: "LIM",
-    destino: "UIO",
-    salidaIso: addDaysISO(-15),
-    hSalida: "12:10",
-    hLlegada: "14:25",
-    permiteCheckin: false,
-    equipaje: "1× mano, 1× bodega",
-    tarifa: "Flex",
-    paseUrl: "#",
-  },
-];
+  if (err) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border p-6 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
+          <p className="text-gray-600 mb-4">{err}</p>
+          {!user && (
+            <button
+              onClick={() => navigate('/login')}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium"
+            >
+              Ir a Iniciar Sesión
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
-function addDaysISO(delta) {
-  const d = new Date();
-  d.setDate(d.getDate() + delta);
-  return d.toISOString();
+  return (
+    <div className="min-h-screen bg-gray-50 py-8 px-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Mis viajes</h1>
+          <p className="text-gray-600">
+            Consulta tus reservas, realiza check-in y descarga pases de abordar.
+          </p>
+          {user && (
+            <p className="text-sm text-purple-600 mt-2">
+              Sesión iniciada como: <strong>{user.email}</strong>
+            </p>
+          )}
+        </div>
+
+        {/* Filtros */}
+        <div className="bg-white rounded-2xl shadow-sm border p-4 mb-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* Tabs */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEstado("todos")}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  estado === "todos"
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setEstado("proximos")}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  estado === "proximos"
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                Próximos
+              </button>
+              <button
+                onClick={() => setEstado("pasados")}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  estado === "pasados"
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                Pasados
+              </button>
+            </div>
+
+            {/* Buscador */}
+            <div className="flex-1">
+              <input
+                type="text"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar por código, ciudad o pasajero..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Lista de reservas */}
+        {reservasFiltradas.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border p-12 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {q.trim() || estado !== "todos" ? "No se encontraron viajes" : "Aún no tienes viajes"}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {q.trim() || estado !== "todos"
+                ? "Prueba con otros criterios de búsqueda"
+                : "Cuando reserves, aparecerán aquí para que gestiones tu experiencia."}
+            </p>
+            {!q.trim() && estado === "todos" && (
+              <button
+                onClick={() => navigate("/vuelos")}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-medium"
+              >
+                Explorar destinos
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reservasFiltradas.map((r) => {
+              const salida = new Date(r.salidaIso);
+              const ahora = new Date();
+              const isPasado = salida < ahora;
+
+              return (
+                <div
+                  key={r.id}
+                  className="bg-white rounded-2xl shadow-sm border hover:shadow-md transition-shadow"
+                >
+                  <div className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-bold text-gray-900">{r.vuelo}</h3>
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              isPasado
+                                ? "bg-gray-100 text-gray-700"
+                                : "bg-green-100 text-green-700"
+                            }`}
+                          >
+                            {isPasado ? "Finalizado" : "Próximo"}
+                          </span>
+                          {r.tarifa && (
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                              {r.tarifa}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-gray-600 mb-1">
+                          <span className="font-semibold text-gray-900">{r.origen}</span>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                          </svg>
+                          <span className="font-semibold text-gray-900">{r.destino}</span>
+                        </div>
+
+                        <p className="text-sm text-gray-600">
+                          {salida.toLocaleDateString("es-CL", {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}{" "}
+                          · {r.hSalida}
+                        </p>
+
+                        <div className="mt-3 flex items-center gap-4 text-sm">
+                          <span className="text-gray-600">
+                            Código: <span className="font-mono font-semibold text-gray-900">{r.codigo}</span>
+                          </span>
+                          <span className="text-gray-600">
+                            Pasajero: <span className="font-semibold text-gray-900">{r.pasajero}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        {r.montoTotal && (
+                          <p className="text-2xl font-bold text-purple-600">
+                            {new Intl.NumberFormat("es-CL", {
+                              style: "currency",
+                              currency: "CLP",
+                              minimumFractionDigits: 0,
+                            }).format(r.montoTotal)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botones */}
+                    <div className="flex gap-3 pt-4 border-t">
+                      <button
+                        onClick={() => navigate(`/mis-viajes/${r.id}`)}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                      >
+                        Ver detalle
+                      </button>
+
+                      <QrButton codigo={r.codigo} />
+
+                      {r.permiteCheckin && !isPasado && (
+                        <button
+                          onClick={() => navigate(`/check-in/${r.codigo}`)}
+                          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                        >
+                          Check-in
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
