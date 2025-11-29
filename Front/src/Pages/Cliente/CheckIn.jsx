@@ -1,15 +1,7 @@
 import React, { useMemo, useState } from "react";
 
-/**
- * Flujo:
- * 1) Buscar reserva (código + apellido)
- * 2) Seleccionar asientos / equipaje / aceptar términos
- * 3) Resumen y confirmación
- *
- * Nota: está mockeado. Cuando tengas backend, reemplaza findBooking() y confirmCheckin().
- */
-
 const BRAND = "#7C4DFF";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5174";
 
 export default function CheckIn() {
     const [step, setStep] = useState(1);
@@ -19,7 +11,7 @@ export default function CheckIn() {
     // Estado del formulario de búsqueda
     const [search, setSearch] = useState({ code: "", lastName: "" });
 
-    // “Reserva” encontrada (mock)
+    // Reserva encontrada (desde BD)
     const [booking, setBooking] = useState(null);
 
     // Selecciones por pasajero
@@ -38,30 +30,82 @@ export default function CheckIn() {
         return true;
     }, [step, booking, choices]);
 
-    /* ---------- mock services ---------- */
-    async function findBooking(code, last) {
-        // Simula llamada a API
-        await sleep(500);
-        if (code.toUpperCase() !== "ABCD12" || last.trim().toLowerCase() !== "perez") {
-            throw new Error("No encontramos una reserva con esos datos.");
+    /* ---------- servicios reales con BD ---------- */
+    async function findBooking(code, lastName) {
+        console.log('🔍 Buscando reserva:', code, lastName);
+        
+        const response = await fetch(`${API_URL}/api/reservas/buscar-checkin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                codigo: code,
+                apellido: lastName
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.mensaje || 'No encontramos una reserva con esos datos.');
         }
-        // Devuelve una reserva de ejemplo
+
+        console.log('✅ Reserva encontrada:', data);
+
+        // Transformar respuesta de la BD al formato que usa el componente
         return {
-            code: "ABCD12",
-            route: { from: "SCL", to: "LIM", date: "2025-11-18", dep: "08:30", arr: "10:40" },
-            flight: "AL 348",
+            id: data.id,
+            code: data.codigo,
+            route: {
+                from: data.origen,
+                to: data.destino,
+                fromName: data.origenNombre,
+                toName: data.destinoNombre,
+                date: data.fechaSalida,
+                dep: data.hSalida,
+                arr: data.hLlegada
+            },
+            flight: data.vuelo,
             passengers: [
-                { id: "p1", name: "Juan Pérez", doc: "CHL 12.345.678-9" },
-                { id: "p2", name: "Ana Pérez", doc: "CHL 21.654.987-0" },
+                {
+                    id: data.pasajero.id,
+                    name: data.pasajero.nombreCompleto,
+                    doc: data.pasajero.documento
+                }
             ],
-            seatsAvailable: [
+            // Los asientos ya seleccionados
+            selectedSeats: data.asientos.map(a => a.numero),
+            // Asientos disponibles (mock - deberías obtenerlos del backend)
+            seatsAvailable: data.asientos.map(a => a.numero).concat([
                 "3A", "3B", "3C", "4A", "4B", "4C", "5A", "5B", "6C", "7A", "7C", "8B"
-            ],
-            baseFareCLP: 79990
+            ]),
+            baseFareCLP: data.montoTotal || 79990,
+            estado: data.estado,
+            puedeHacerCheckin: data.puedeHacerCheckin,
+            horasRestantes: data.horasRestantes
         };
     }
 
     async function confirmCheckin(payload) {
+        console.log('✅ Confirmando check-in:', payload);
+        
+        // TODO: Aquí deberías llamar a un endpoint para confirmar el check-in
+        // Por ahora solo retorna éxito
+        
+        // const response = await fetch(`${API_URL}/api/checkin/confirmar`, {
+        //     method: 'POST',
+        //     headers: { 'Content-Type': 'application/json' },
+        //     body: JSON.stringify({
+        //         idReserva: booking.id,
+        //         pasajeros: payload.choices
+        //     })
+        // });
+        
+        // const data = await response.json();
+        // return data;
+        
+        // Mock temporal
         await sleep(600);
         return { ok: true, boardingPassUrl: "#" };
     }
@@ -73,17 +117,31 @@ export default function CheckIn() {
         setLoading(true);
         setBooking(null);
         setChoices({});
+        
         try {
             const res = await findBooking(search.code, search.lastName);
+            
+            // Verificar si puede hacer check-in
+            if (!res.puedeHacerCheckin) {
+                throw new Error('Esta reserva no está disponible para check-in. Verifica el estado de tu reserva.');
+            }
+            
             setBooking(res);
-            // set default choices (sin asiento)
+            
+            // Inicializar choices con los asientos ya seleccionados
             const init = {};
-            res.passengers.forEach((p) => {
-                init[p.id] = { seat: "", extraBag: false, docsAccepted: false };
+            res.passengers.forEach((p, index) => {
+                init[p.id] = {
+                    seat: res.selectedSeats[index] || "",
+                    extraBag: false,
+                    docsAccepted: false
+                };
             });
             setChoices(init);
             setStep(2);
+            
         } catch (e2) {
+            console.error('❌ Error al buscar:', e2);
             setErr(e2.message);
         } finally {
             setLoading(false);
@@ -140,7 +198,7 @@ export default function CheckIn() {
                                         <input
                                             value={search.code}
                                             onChange={(e) => setSearch({ ...search, code: e.target.value })}
-                                            placeholder="ABCD12"
+                                            placeholder="RES-05"
                                             className="input w-full rounded-xl border px-4 py-2 bg-white uppercase tracking-wider"
                                             required
                                         />
@@ -150,7 +208,7 @@ export default function CheckIn() {
                                         <input
                                             value={search.lastName}
                                             onChange={(e) => setSearch({ ...search, lastName: e.target.value })}
-                                            placeholder="Pérez"
+                                            placeholder="Lorca"
                                             className="input w-full rounded-xl border px-4 py-2 bg-white"
                                             required
                                         />
@@ -297,7 +355,7 @@ export default function CheckIn() {
                                 ))}
                             </div>
 
-                            <div className="mt-8 flex justify-center">
+                            <div className="mt-8 flex justify-center gap-3">
                                 <a
                                     href="#"
                                     className="rounded-xl px-6 py-3 text-white"
@@ -305,6 +363,17 @@ export default function CheckIn() {
                                 >
                                     Descargar pases (PDF)
                                 </a>
+                                <button
+                                    onClick={() => {
+                                        setStep(1);
+                                        setBooking(null);
+                                        setChoices({});
+                                        setSearch({ code: "", lastName: "" });
+                                    }}
+                                    className="rounded-xl border border-[#E7E7ED] px-5 py-3 bg-white hover:bg-[#fafafe]"
+                                >
+                                    Nuevo check-in
+                                </button>
                             </div>
                         </div>
                     </section>
@@ -359,8 +428,10 @@ function FlightCard({ booking }) {
                 <div className="text-sm text-[#5c5c66]">{booking.route.date} · {booking.route.dep}–{booking.route.arr}</div>
             </div>
             <div className="flex gap-2">
-                <Badge>Tarifa Standard</Badge>
-                <Badge>1× Equipaje de mano</Badge>
+                <Badge>Estado: {booking.estado}</Badge>
+                {booking.horasRestantes && (
+                    <Badge>{booking.horasRestantes}h hasta el vuelo</Badge>
+                )}
             </div>
         </div>
     );

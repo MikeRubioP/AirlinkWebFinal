@@ -4,6 +4,185 @@ import express from "express";
 const router = express.Router();
 
 /**
+ * POST /api/reservas/buscar-checkin
+ * Busca una reserva por código y apellido del pasajero
+ */
+router.post("/buscar-checkin", async (req, res) => {
+  const db = req.app.get("db");
+  const { codigo, apellido } = req.body;
+
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🔍 BUSCANDO RESERVA PARA CHECK-IN');
+  console.log('Código:', codigo);
+  console.log('Apellido:', apellido);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  try {
+    // Validaciones
+    if (!codigo || !apellido) {
+      return res.status(400).json({
+        error: "Datos incompletos",
+        mensaje: "El código de reserva y el apellido son requeridos"
+      });
+    }
+
+    console.log('🔍 Formatos de búsqueda aceptados:');
+    console.log('  - Código completo: RES241129MPZR');
+    console.log('  - Código simplificado: RES-6 o RES6');
+    console.log('  - Solo número: 6');
+
+    // Extraer el ID numérico si viene en formato simplificado (RES-6, RES6, o solo 6)
+    let idReserva = null;
+    const codigoLimpio = codigo.toUpperCase().trim();
+    
+    // Si viene como "RES-6" o "RES6" o "#6"
+    const matchSimplificado = codigoLimpio.match(/(?:RES-?|#)?(\d+)$/);
+    if (matchSimplificado) {
+      idReserva = parseInt(matchSimplificado[1]);
+      console.log(`  ✓ Detectado formato simplificado: ID ${idReserva}`);
+    }
+
+    // Buscar reserva por código completo O por ID
+    const [reservas] = await db.query(
+      `SELECT 
+        r.idReserva as id,
+        r.codigo_reserva as codigo,
+        r.estado,
+        r.monto_total as montoTotal,
+        
+        v.idViaje,
+        v.salida as salidaIso,
+        v.llegada as llegadaIso,
+        
+        to_origen.codigo as origen,
+        to_origen.nombreTerminal as origenNombre,
+        to_destino.codigo as destino,
+        to_destino.nombreTerminal as destinoNombre,
+        
+        p.idPasajero,
+        p.nombrePasajero,
+        p.apellidoPasajero,
+        p.documento,
+        
+        e.nombreEmpresa as empresa
+        
+      FROM reserva r
+      INNER JOIN viaje v ON r.idViaje = v.idViaje
+      INNER JOIN ruta ru ON v.idRuta = ru.idRuta
+      INNER JOIN terminal to_origen ON ru.idTerminalOrigen = to_origen.idTerminal
+      INNER JOIN terminal to_destino ON ru.idTerminalDestino = to_destino.idTerminal
+      INNER JOIN pasajero p ON r.idReserva = p.idReserva
+      LEFT JOIN empresa_equipo eq ON v.idEquipo = eq.idEquipo
+      LEFT JOIN empresa e ON eq.idEmpresa = e.idEmpresa
+      
+      WHERE (
+        UPPER(r.codigo_reserva) = ? 
+        OR (? IS NOT NULL AND r.idReserva = ?)
+      )
+      AND LOWER(p.apellidoPasajero) = LOWER(?)
+      
+      LIMIT 1`,
+      [codigoLimpio, idReserva, idReserva, apellido]
+    );
+
+    if (reservas.length === 0) {
+      console.log('⚠️ No se encontró reserva');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
+      return res.status(404).json({
+        error: "Reserva no encontrada",
+        mensaje: "No encontramos una reserva con ese código y apellido"
+      });
+    }
+
+    const reserva = reservas[0];
+
+    // Verificar fechas
+    const fechaSalida = new Date(reserva.salidaIso);
+    const ahora = new Date();
+    const horasAntesDeSalida = (fechaSalida - ahora) / (1000 * 60 * 60);
+
+    if (fechaSalida < ahora) {
+      return res.status(400).json({
+        error: "Check-in no disponible",
+        mensaje: "Este vuelo ya ha partido"
+      });
+    }
+
+    if (horasAntesDeSalida > 24) {
+      return res.status(400).json({
+        error: "Check-in no disponible",
+        mensaje: "El check-in estará disponible 24 horas antes del vuelo"
+      });
+    }
+
+    // Obtener asientos
+    let asientos = [];
+    try {
+      const [asientosResult] = await db.query(
+        `SELECT a.numero, pa.cargo_extra as precio
+        FROM pasajero_asiento pa
+        INNER JOIN asiento a ON pa.idAsiento = a.idAsiento
+        INNER JOIN pasajero p ON pa.idPasajero = p.idPasajero
+        WHERE p.idReserva = ?`,
+        [reserva.id]
+      );
+      asientos = asientosResult;
+    } catch (error) {
+      asientos = [];
+    }
+
+    const salida = new Date(reserva.salidaIso);
+    const llegada = new Date(reserva.llegadaIso);
+
+    const resultado = {
+      id: reserva.id,
+      codigo: reserva.codigo,
+      estado: reserva.estado,
+      vuelo: `AL ${reserva.idViaje}`,
+      origen: reserva.origen,
+      destino: reserva.destino,
+      origenNombre: reserva.origenNombre,
+      destinoNombre: reserva.destinoNombre,
+      empresa: reserva.empresa || 'AirLink',
+      salidaIso: reserva.salidaIso,
+      hSalida: salida.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      hLlegada: llegada.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      fechaSalida: salida.toLocaleDateString('es-CL', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      }),
+      pasajero: {
+        id: reserva.idPasajero,
+        nombre: reserva.nombrePasajero,
+        apellido: reserva.apellidoPasajero,
+        nombreCompleto: `${reserva.nombrePasajero} ${reserva.apellidoPasajero}`,
+        documento: reserva.documento
+      },
+      asientos: asientos.map(a => ({ numero: a.numero, precio: Number(a.precio) })),
+      puedeHacerCheckin: reserva.estado === 'confirmada',
+      horasRestantes: Math.floor(horasAntesDeSalida)
+    };
+
+    console.log('✅ Reserva encontrada:', reserva.codigo);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    res.json(resultado);
+
+  } catch (error) {
+    console.error('❌ Error al buscar reserva:', error);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    
+    res.status(500).json({
+      error: "Error al buscar reserva",
+      mensaje: error.message
+    });
+  }
+});
+
+/**
  * GET /api/reservas/mias
  * Obtiene todas las reservas del usuario (por email o por token)
  */
