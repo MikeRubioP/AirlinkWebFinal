@@ -299,23 +299,26 @@ export default function BuscarVuelos() {
               {fechasDisponibles.map((f) => (
                 <button
                   key={f.fecha}
-                  onClick={() => setFechaIda(f.fecha)}
+                  onClick={() => {
+                    // ✅ Misma validación que en el useEffect
+                    if (f.fecha && f.fecha < todayISO) {
+                      setFechaIda(todayISO);
+                    } else {
+                      setFechaIda(f.fecha);
+                    }
+                  }}
                   className={`px-6 py-3 rounded-lg border-2 transition-all ${fechaIda === f.fecha
                       ? "border-purple-600 bg-purple-600 text-white shadow-lg transform scale-105"
                       : "border-gray-200 hover:border-purple-300 hover:shadow-md bg-white"
                     }`}
                 >
-                  <div
-                    className={`text-xs mb-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
-                      }`}
-                  >
+                  <div className={`text-xs mb-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
+                    }`}>
                     {f.dia}
                   </div>
                   <div className="text-2xl font-bold">{f.numero}</div>
-                  <div
-                    className={`text-xs mt-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
-                      }`}
-                  >
+                  <div className={`text-xs mt-1 ${fechaIda === f.fecha ? "text-purple-100" : "text-gray-500"
+                    }`}>
                     {f.mes}
                   </div>
                 </button>
@@ -595,7 +598,7 @@ export default function BuscarVuelos() {
                                       })
                                     }
                                     className={`w-full py-2 rounded text-sm font-medium transition-all ${premium ? "bg-white text-gray-900 hover:bg-gray-100"
-                                        : "bg-purple-600 text-white hover:bg-purple-700"
+                                      : "bg-purple-600 text-white hover:bg-purple-700"
                                       }`}
                                   >
                                     {light ? "Continuar con Light" : "Elegir"}
