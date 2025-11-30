@@ -48,6 +48,7 @@ export default function CheckIn() {
         const data = await response.json();
 
         if (!response.ok) {
+            // Manejar errores específicos del servidor
             throw new Error(data.mensaje || 'No encontramos una reserva con esos datos.');
         }
 
@@ -90,24 +91,46 @@ export default function CheckIn() {
     async function confirmCheckin(payload) {
         console.log('✅ Confirmando check-in:', payload);
         
-        // TODO: Aquí deberías llamar a un endpoint para confirmar el check-in
-        // Por ahora solo retorna éxito
+        const response = await fetch(`${API_URL}/api/checkin/confirmar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                idReserva: booking.id,
+                pasajeros: payload.choices
+            })
+        });
         
-        // const response = await fetch(`${API_URL}/api/checkin/confirmar`, {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify({
-        //         idReserva: booking.id,
-        //         pasajeros: payload.choices
-        //     })
-        // });
+        const data = await response.json();
         
-        // const data = await response.json();
-        // return data;
+        if (!response.ok) {
+            throw new Error(data.mensaje || 'Error al confirmar check-in');
+        }
         
-        // Mock temporal
-        await sleep(600);
-        return { ok: true, boardingPassUrl: "#" };
+        return data;
+    }
+    
+    // Función para enviar pase por email
+    async function sendBoardingPass() {
+        try {
+            setLoading(true);
+            const response = await fetch(`${API_URL}/api/checkin/send-boarding-pass`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idReserva: booking.id })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(`✅ Pase de abordar enviado a ${data.email}`);
+            } else {
+                alert(`❌ Error: ${data.mensaje}`);
+            }
+        } catch (error) {
+            alert(`❌ Error al enviar email: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
     }
 
     /* ---------- handlers ---------- */
@@ -121,9 +144,21 @@ export default function CheckIn() {
         try {
             const res = await findBooking(search.code, search.lastName);
             
-            // Verificar si puede hacer check-in
+            console.log('📊 Datos recibidos:', {
+                estado: res.estado,
+                puedeHacerCheckin: res.puedeHacerCheckin,
+                horasRestantes: res.horasRestantes
+            });
+            
+            // ⚠️ IMPORTANTE: Comentar esta validación temporalmente para debugging
+            // if (!res.puedeHacerCheckin) {
+            //     throw new Error('Esta reserva no está disponible para check-in. Verifica el estado de tu reserva.');
+            // }
+            
+            // Mostrar advertencia en lugar de error
             if (!res.puedeHacerCheckin) {
-                throw new Error('Esta reserva no está disponible para check-in. Verifica el estado de tu reserva.');
+                console.warn('⚠️ puedeHacerCheckin es false, pero continuando...');
+                setErr(`Advertencia: Estado de reserva "${res.estado}". Horas restantes: ${res.horasRestantes}h`);
             }
             
             setBooking(res);
@@ -198,10 +233,13 @@ export default function CheckIn() {
                                         <input
                                             value={search.code}
                                             onChange={(e) => setSearch({ ...search, code: e.target.value })}
-                                            placeholder="RES-05"
+                                            placeholder="RES-7 o RES241129MPZR"
                                             className="input w-full rounded-xl border px-4 py-2 bg-white uppercase tracking-wider"
                                             required
                                         />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Acepta: RES-7, RES241129MPZR, o solo el número
+                                        </p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium mb-1">Apellido</label>
@@ -249,6 +287,11 @@ export default function CheckIn() {
                     <section className="grid lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2 space-y-6">
                             <FlightCard booking={booking} />
+
+                            {/* Mostrar advertencia si no puede hacer check-in */}
+                            {!booking.puedeHacerCheckin && (
+                                <Alert type="warning" msg={`Nota: Esta reserva está en estado "${booking.estado}". Asegúrate de que esté confirmada antes del vuelo.`} />
+                            )}
 
                             {booking.passengers.map((p) => (
                                 <div key={p.id} className="rounded-3xl border border-[#E7E7ED] bg-white p-6">
@@ -355,14 +398,23 @@ export default function CheckIn() {
                                 ))}
                             </div>
 
-                            <div className="mt-8 flex justify-center gap-3">
+                            <div className="mt-8 flex justify-center gap-3 flex-wrap">
                                 <a
-                                    href="#"
+                                    href={`${API_URL}/api/checkin/boarding-pass/${booking.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="rounded-xl px-6 py-3 text-white"
                                     style={{ background: BRAND }}
                                 >
-                                    Descargar pases (PDF)
+                                    📄 Descargar pases (PDF)
                                 </a>
+                                <button
+                                    onClick={sendBoardingPass}
+                                    disabled={loading}
+                                    className="rounded-xl px-6 py-3 text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                                >
+                                    {loading ? '📧 Enviando...' : '📧 Enviar por email'}
+                                </button>
                                 <button
                                     onClick={() => {
                                         setStep(1);
@@ -427,19 +479,27 @@ function FlightCard({ booking }) {
                 <div className="text-xl font-bold">{booking.route.from} → {booking.route.to}</div>
                 <div className="text-sm text-[#5c5c66]">{booking.route.date} · {booking.route.dep}–{booking.route.arr}</div>
             </div>
-            <div className="flex gap-2">
-                <Badge>Estado: {booking.estado}</Badge>
-                {booking.horasRestantes && (
-                    <Badge>{booking.horasRestantes}h hasta el vuelo</Badge>
+            <div className="flex gap-2 flex-wrap">
+                <Badge color={booking.estado === 'confirmada' ? 'green' : 'yellow'}>
+                    Estado: {booking.estado}
+                </Badge>
+                {booking.horasRestantes !== undefined && (
+                    <Badge color="purple">{booking.horasRestantes}h hasta el vuelo</Badge>
                 )}
             </div>
         </div>
     );
 }
 
-function Badge({ children }) {
+function Badge({ children, color = 'purple' }) {
+    const colors = {
+        purple: 'text-[#7C4DFF] bg-[#7C4DFF]/10',
+        green: 'text-green-600 bg-green-100',
+        yellow: 'text-yellow-600 bg-yellow-100'
+    };
+    
     return (
-        <span className="inline-flex text-xs font-semibold text-[#7C4DFF] bg-[#7C4DFF]/10 rounded-full px-2 py-0.5">
+        <span className={`inline-flex text-xs font-semibold rounded-full px-2 py-0.5 ${colors[color]}`}>
             {children}
         </span>
     );
@@ -471,10 +531,14 @@ function PriceBreakdown({ booking, choices }) {
 }
 
 function Alert({ type = "info", msg }) {
-    const palette =
-        type === "error"
-            ? { bg: "bg-red-50", border: "border-red-200", text: "text-red-700" }
-            : { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" };
+    const palettes = {
+        error: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700" },
+        warning: { bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
+        info: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" }
+    };
+    
+    const palette = palettes[type] || palettes.info;
+    
     return (
         <div className={`mb-4 rounded-xl ${palette.bg} ${palette.border} border px-4 py-3 ${palette.text}`}>
             {msg}

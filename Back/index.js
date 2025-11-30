@@ -19,7 +19,8 @@ import { router as uploadRoutes } from "./integrations/upload.routes.js";
 import { router as pagosRoutes } from "./integrations/pagos.routes.js";
 import { router as asientosRoutes } from "./integrations/asientos.routes.js";
 import { router as cuponesRoutes } from "./integrations/cupones.routes.js";
-import { router as reservasRoutes } from "./integrations/reservas.routes.js"; // ✅ NUEVO
+import { router as reservasRoutes } from "./integrations/reservas.routes.js";
+import { router as checkinRoutes } from "./integrations/checkin.routes.js"; // ✅ NUEVO
 import { countriesRoutes } from "./integrations/countries.routes.js";
 import { geocodingRoutes } from "./integrations/geocoding.routes.js";
 import { router as contactoRoutes } from "./integrations/contacto.routes.js";
@@ -104,17 +105,16 @@ const startServer = async () => {
     app.use("/vuelos", vuelosRoutes);
     app.use("/pagos", pagosRoutes);
 
-    // ✅ NUEVO: Rutas de asientos, cupones y reservas
+    // APIs bajo /api/*
     app.use("/api/asientos", asientosRoutes);
     app.use("/api/cupones", cuponesRoutes);
-    app.use("/api/reservas", reservasRoutes); // ✅ NUEVO
-
-    // APIs bajo /api/*
+    app.use("/api/reservas", reservasRoutes);
+    app.use("/api/checkin", checkinRoutes); // ✅ NUEVO - Rutas de check-in
     app.use("/api/countries", countriesRoutes);
     app.use("/api/geocoding", geocodingRoutes);
     app.use("/airports", airportsRoutes); 
 
-    // Contacto (si tu router ya incluye prefijo interno, déjalo así como lo tenías)
+    // Contacto
     app.use("/contacto", contactoRoutes);
 
     // Rutas de diagnóstico
@@ -178,8 +178,12 @@ const startServer = async () => {
       console.log("   - GET    /api/asientos/:idViaje");
       console.log("   - POST   /api/cupones/validar");
       console.log("   - GET    /api/cupones/activos");
-      console.log("   - GET    /api/reservas/mias"); // ✅ NUEVO
-      console.log("   - GET    /api/reservas/:idReserva"); // ✅ NUEVO
+      console.log("   - GET    /api/reservas/mias");
+      console.log("   - GET    /api/reservas/:idReserva");
+      console.log("   - POST   /api/reservas/buscar-checkin"); // ✅ NUEVO
+      console.log("   - POST   /api/checkin/confirmar"); // ✅ NUEVO
+      console.log("   - GET    /api/checkin/boarding-pass/:idReserva"); // ✅ NUEVO
+      console.log("   - POST   /api/checkin/send-boarding-pass"); // ✅ NUEVO
     });
 
     // Cierre graceful
