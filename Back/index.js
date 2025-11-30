@@ -17,6 +17,9 @@ import { router as busesRoutes } from "./integrations/buses.routes.js";
 import { router as vuelosRoutes } from "./integrations/vuelos.routes.js";
 import { router as uploadRoutes } from "./integrations/upload.routes.js";
 import { router as pagosRoutes } from "./integrations/pagos.routes.js";
+import { router as asientosRoutes } from "./integrations/asientos.routes.js";
+import { router as cuponesRoutes } from "./integrations/cupones.routes.js";
+import { router as reservasRoutes } from "./integrations/reservas.routes.js"; // ✅ NUEVO
 import { countriesRoutes } from "./integrations/countries.routes.js";
 import { geocodingRoutes } from "./integrations/geocoding.routes.js";
 import { router as contactoRoutes } from "./integrations/contacto.routes.js";
@@ -101,6 +104,11 @@ const startServer = async () => {
     app.use("/vuelos", vuelosRoutes);
     app.use("/pagos", pagosRoutes);
 
+    // ✅ NUEVO: Rutas de asientos, cupones y reservas
+    app.use("/api/asientos", asientosRoutes);
+    app.use("/api/cupones", cuponesRoutes);
+    app.use("/api/reservas", reservasRoutes); // ✅ NUEVO
+
     // APIs bajo /api/*
     app.use("/api/countries", countriesRoutes);
     app.use("/api/geocoding", geocodingRoutes);
@@ -166,7 +174,12 @@ const startServer = async () => {
       console.log("   - GET    /buses");
       console.log("   - GET    /vuelos/buscar");
       console.log("   - GET    /vuelos/destinos");
-      console.log("   - GET    /vuelos/:idViaje");       
+      console.log("   - GET    /vuelos/:idViaje");
+      console.log("   - GET    /api/asientos/:idViaje");
+      console.log("   - POST   /api/cupones/validar");
+      console.log("   - GET    /api/cupones/activos");
+      console.log("   - GET    /api/reservas/mias"); // ✅ NUEVO
+      console.log("   - GET    /api/reservas/:idReserva"); // ✅ NUEVO
     });
 
     // Cierre graceful

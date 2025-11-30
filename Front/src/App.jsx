@@ -1,129 +1,104 @@
-// src/App.jsx
-import { Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import Navbar from './Components/Navbar';
+import Footer from './Components/Footer';
 
-import Navbar from "./Components/Navbar";
-import Footer from "./Components/Footer";
+// Páginas Públicas (están en Pages/Usuario/)
+import Home from './Pages/Usuario/Home';
+import Vuelos from './Pages/Usuario/Vuelos';
+import Contacto from './Pages/Usuario/Contacto';
+import SobreNosotros from './Pages/Usuario/SobreNosotros';
+import Cupones from './Pages/Usuario/Cupones';
 
-/* Páginas públicas (carpeta Usuario) */
-import Home from "./Pages/Usuario/Home";
-import Vuelos from "./Pages/Usuario/Vuelos";
-import Cupones from "./Pages/Usuario/Cupones";
-import Contacto from "./Pages/Usuario/Contacto";
-import SobreNosotros from "./Pages/Usuario/SobreNosotros";
+// Páginas de Vuelos (están en Pages/Vuelos/)
+import BuscarVuelos from './Pages/Vuelos/BuscarVuelos';
+import DetalleViaje from './Pages/Vuelos/DetalleViaje';
+import SeleccionAsientos from './Pages/Vuelos/SeleccionAsientos';
+import SeleccionVueloVuelta from './Pages/Vuelos/SeleccionVueloVuelta';
 
-/* Flujo de cliente */
-import MisViajes from "./Pages/Cliente/MisViajes";
-import CheckIn from "./Pages/Cliente/CheckIn";
-import MiCuenta from "./Pages/Cliente/Cuenta";
+// Páginas de Pago (están en Pages/Pago/)
+import Pago from './Pages/Pago/Pago';
+import PagoExitoso from './Pages/Pago/PagoExitoso';
 
-/* Flujo de vuelos */
-import { VueloProvider } from "./Pages/Vuelos/context/VueloContext";
-import BuscarVuelos from "./Pages/Vuelos/BuscarVuelos";
-import SeleccionVueloVuelta from "./Pages/Vuelos/SeleccionVueloVuelta";
-import SeleccionAsientos from "./Pages/Vuelos/SeleccionAsientos";
-import DetalleViaje from "./Pages/Vuelos/DetalleViaje";
+// Páginas de Cliente (están en Pages/Cliente/)
+import MisViajes from './Pages/Cliente/MisViajes';
+import DetalleVuelo from './Pages/Cliente/DetalleVuelo';
+import Cuenta from './Pages/Cliente/Cuenta';
+import CheckIn from './Pages/Cliente/CheckIn'; // ✅ TU NOMBRE EXACTO
 
-/* Pago */
-import Pago from "./Pages/Pago/Pago";
-import PagoExitoso from "./Pages/Pago/PagoExitoso";
-
-/* Guards */
-import {
-  RequireSearch,
-  RequireFlightOut,
-  RequireReturnIfRoundTrip,
-  RequireCheckoutReady,
-  // RequirePaymentDone ya no se usa - se eliminó de /pago-exitoso
-} from "./Components/Guards";
-
-export default function App() {
+function App() {
   return (
     <AuthProvider>
-      <VueloProvider>
-        <div className="min-h-screen bg-gray-50 flex flex-col">
-          <Navbar />
+      <div className="flex flex-col min-h-screen">
+        <Navbar />
+        
+        <main className="flex-grow">
+          <Routes>
+            {/* ==================== RUTAS PÚBLICAS ==================== */}
+            <Route path="/" element={<Home />} />
+            <Route path="/vuelos" element={<Vuelos />} />
+            <Route path="/contacto" element={<Contacto />} />
+            <Route path="/sobre-nosotros" element={<SobreNosotros />} />
+            <Route path="/cupones" element={<Cupones />} />
 
-          <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-            <Suspense fallback={<div>Cargando...</div>}>
-              <Routes>
-                {/* ===== Público (carpeta Usuario) ===== */}
-                <Route path="/" element={<Home />} />
-                <Route path="/vuelos" element={<Vuelos />} />
-                <Route path="/cupones" element={<Cupones />} />
-                <Route path="/contacto" element={<Contacto />} />
-                <Route path="/sobre-nosotros" element={<SobreNosotros />} />
+            {/* ==================== RUTAS DE VUELOS ==================== */}
+            <Route path="/vuelos/buscar" element={<BuscarVuelos />} />
+            <Route path="/buscar-vuelos" element={<BuscarVuelos />} />
+            <Route path="/vuelos/detalle" element={<DetalleViaje />} />
+            <Route path="/vuelos/detalleviaje" element={<DetalleViaje />} />
+            <Route path="/vuelos/asientos" element={<SeleccionAsientos />} />
+            <Route path="/vuelos/seleccion-asiento" element={<SeleccionAsientos />} /> {/* ✅ AGREGADA */}
+            <Route path="/vuelos/seleccion-asientos" element={<SeleccionAsientos />} /> {/* ✅ AGREGADA */}
+            <Route path="/vuelos/vuelta" element={<SeleccionVueloVuelta />} />
 
-                {/* ===== Búsqueda de vuelos ===== */}
-                <Route
-                  path="/vuelos/buscar"
-                  element={
-                    <RequireSearch redirectTo="/">
-                      <BuscarVuelos />
-                    </RequireSearch>
-                  }
-                />
+            {/* ==================== RUTAS DE PAGO ==================== */}
+            <Route path="/pago" element={<Pago />} />
+            <Route path="/pago-exitoso" element={<PagoExitoso />} />
 
-                {/* No permitir seleccionar asiento sin haber elegido un vuelo de ida (y tarifa) */}
-                <Route
-                  path="/vuelos/seleccion-asiento"
-                  element={
-                    <RequireFlightOut redirectTo="/">
-                      <SeleccionAsientos />
-                    </RequireFlightOut>
-                  }
-                />
+            {/* ==================== RUTAS DE CLIENTE ==================== */}
+            <Route path="/mis-viajes" element={<MisViajes />} />
+            <Route path="/mis-viajes/:id" element={<DetalleVuelo />} /> {/* ✅ DETALLE */}
+            <Route path="/cuenta" element={<Cuenta />} />
+            <Route path="/check-in" element={<CheckIn />} />
+            <Route path="/check-in/:codigo" element={<CheckIn />} />
+            <Route path="/checkin" element={<CheckIn />} /> {/* ✅ Sin guion */}
+            <Route path="/checkin/:codigo" element={<CheckIn />} /> {/* ✅ Sin guion */}
 
-                {/* No permitir ir a seleccionar vuelta sin haber elegido ida primero */}
-                <Route
-                  path="/vuelos/vuelta"
-                  element={
-                    <RequireFlightOut redirectTo="/">
-                      <SeleccionVueloVuelta />
-                    </RequireFlightOut>
-                  }
-                />
+            {/* ==================== RUTA 404 ==================== */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
 
-                {/* Detalle: requiere ida (y, si es RT, también vuelta/ tarifa de vuelta) */}
-                <Route
-                  path="/vuelos/detalleviaje"
-                  element={
-                    <RequireFlightOut redirectTo="/">
-                      <RequireReturnIfRoundTrip redirectTo="/">
-                        <DetalleViaje />
-                      </RequireReturnIfRoundTrip>
-                    </RequireFlightOut>
-                  }
-                />
-
-                {/* Pago: asegura que todo el flujo previo esté listo */}
-                <Route
-                  path="/pago"
-                  element={
-                    <RequireFlightOut redirectTo="/">
-                      <RequireReturnIfRoundTrip redirectTo="/">
-                        <RequireCheckoutReady redirectTo="/">
-                          <Pago />
-                        </RequireCheckoutReady>
-                      </RequireReturnIfRoundTrip>
-                    </RequireFlightOut>
-                  }
-                />
-
-                <Route path="/pago-exitoso" element={<PagoExitoso />} />
-
-                {/* Cliente autenticado */}
-                <Route path="/mis-viajes" element={<MisViajes />} />
-                <Route path="/checkin" element={<CheckIn />} />
-                <Route path="/mi-cuenta" element={<MiCuenta />} />
-              </Routes>
-            </Suspense>
-          </main>
-
-          <Footer />
-        </div>
-      </VueloProvider>
+        <Footer />
+      </div>
     </AuthProvider>
   );
 }
+
+// Componente 404
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border p-8 text-center">
+        <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg className="w-10 h-10 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h1 className="text-6xl font-bold text-gray-900 mb-2">404</h1>
+        <h2 className="text-2xl font-semibold text-gray-700 mb-2">Página no encontrada</h2>
+        <p className="text-gray-600 mb-6">
+          La página que buscas no existe o fue movida.
+        </p>
+        <a
+          href="/"
+          className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+        >
+          Volver al inicio
+        </a>
+      </div>
+    </div>
+  );
+}
+
+export default App;

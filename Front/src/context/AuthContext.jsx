@@ -13,6 +13,7 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
+    const [token, setToken] = useState(null); // ✅ Agregado: estado del token
     const [loading, setLoading] = useState(true);
 
     // Verificar si hay un token al cargar la app
@@ -21,30 +22,36 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const checkAuth = async () => {
-        const token = localStorage.getItem('token');
-        if (token) {
+        const savedToken = localStorage.getItem('token');
+        if (savedToken) {
+            setToken(savedToken); // ✅ Guardar token en estado
             try {
                 const res = await axios.get('http://localhost:5174/auth/me', {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: { Authorization: `Bearer ${savedToken}` }
                 });
                 setUser(res.data.usuario);
             } catch (err) {
                 console.error('Error al verificar autenticación:', err);
                 localStorage.removeItem('token');
                 setUser(null);
+                setToken(null); // ✅ Limpiar token en estado
             }
         }
         setLoading(false);
     };
 
-    const login = (userData, token) => {
-        localStorage.setItem('token', token);
+    const login = (userData, authToken) => {
+        localStorage.setItem('token', authToken);
+        setToken(authToken); // ✅ Guardar token en estado
         setUser(userData);
+        console.log('✅ Usuario logueado:', userData.email || userData.nombreUsuario);
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
+        setToken(null); // ✅ Limpiar token en estado
+        console.log('👋 Usuario deslogueado');
     };
 
     const isCliente = () => {
@@ -54,9 +61,10 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user,
+            token, // ✅ Exportar token (requerido por MisViajes y DetalleVuelo)
             login,
             logout,
-            checkAuth, // ← Exporta checkAuth para usarlo después de verificar
+            checkAuth,
             isCliente,
             isAuthenticated: !!user,
             loading
