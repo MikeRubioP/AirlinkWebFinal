@@ -109,10 +109,14 @@ export default function CheckIn() {
         return data;
     }
     
-    // Función para enviar pase por email
+
     async function sendBoardingPass() {
         try {
             setLoading(true);
+            setErr("");
+            
+            console.log('📧 Enviando pase de abordar...');
+            
             const response = await fetch(`${API_URL}/api/checkin/send-boarding-pass`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -122,12 +126,22 @@ export default function CheckIn() {
             const data = await response.json();
             
             if (response.ok) {
-                alert(`✅ Pase de abordar enviado a ${data.email}`);
+                // ✅ Mensaje simple - email REAL enviado
+                alert(`✅ Pase de abordar enviado exitosamente a:\n${data.email}\n\nRevisa tu bandeja de entrada (y spam si no lo ves).`);
             } else {
-                alert(`❌ Error: ${data.mensaje}`);
+                throw new Error(data.mensaje || 'Error al enviar email');
             }
         } catch (error) {
-            alert(`❌ Error al enviar email: ${error.message}`);
+            console.error('❌ Error:', error);
+            
+            let mensaje = error.message;
+            
+            if (error.message === 'Failed to fetch') {
+                mensaje = 'No se pudo conectar con el servidor. Verifica que el backend esté corriendo.';
+            }
+            
+            alert(`❌ Error al enviar email:\n${mensaje}`);
+            setErr(mensaje);
         } finally {
             setLoading(false);
         }
