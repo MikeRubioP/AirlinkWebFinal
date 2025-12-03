@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { CreditCard, Building2, Wallet, AlertCircle, Clock, MapPin, Info } from "lucide-react";
+import { CreditCard, Building2, Wallet, AlertCircle, Clock, MapPin, Info, Tag, Percent } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
 import ValidatedInput from "../../Components/ValidatedInput.jsx";
@@ -123,6 +123,12 @@ export default function Pago() {
     correo: [],
     telefono: [],
   });
+
+  // ========== NUEVO: Estados para cupones ==========
+  const [codigoCupon, setCodigoCupon] = useState('');
+  const [cuponAplicado, setCuponAplicado] = useState(null);
+  const [errorCupon, setErrorCupon] = useState('');
+  const [loadingCupon, setLoadingCupon] = useState(false);
 
   const [edadCalculada, setEdadCalculada] = useState(null);
   const searchState = useMemo(() => safeParse("searchState") || {}, []);
@@ -321,6 +327,75 @@ export default function Pago() {
     });
   };
 
+  // ========== NUEVO: Funciones para cupones ==========
+  
+  const validarCupon = async () => {
+    if (!codigoCupon.trim()) {
+      setErrorCupon('Ingresa un código de cupón');
+      return;
+    }
+    
+    setLoadingCupon(true);
+    setErrorCupon('');
+    
+    try {
+      const subtotal = totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos;
+      
+      const response = await axios.post(`http://localhost:5174/api/cupones/validar`, {
+        codigo: codigoCupon.toUpperCase(),
+        monto: subtotal
+      });
+      
+      if (response.data) {
+        setCuponAplicado(response.data);
+        setErrorCupon('');
+        
+        Swal.fire({
+          icon: 'success',
+          title: '¡Cupón aplicado!',
+          text: `Has obtenido un descuento de ${
+            response.data.tipoCupon === 'porcentaje' 
+              ? `${response.data.valorDescuento}%` 
+              : CLP(response.data.valorDescuento)
+          }`,
+          confirmButtonColor: '#7c3aed',
+          timer: 3000
+        });
+      }
+    } catch (error) {
+      const mensaje = error.response?.data?.mensaje || 'Cupón inválido o expirado';
+      setErrorCupon(mensaje);
+      setCuponAplicado(null);
+      
+      Swal.fire({
+        icon: 'error',
+        title: 'Cupón inválido',
+        text: mensaje,
+        confirmButtonColor: '#7c3aed'
+      });
+    } finally {
+      setLoadingCupon(false);
+    }
+  };
+  
+  const eliminarCupon = () => {
+    setCuponAplicado(null);
+    setCodigoCupon('');
+    setErrorCupon('');
+  };
+
+  const calcularDescuento = () => {
+    if (!cuponAplicado) return 0;
+    
+    const subtotal = totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos;
+    
+    if (cuponAplicado.tipoCupon === 'porcentaje') {
+      return Math.round((subtotal * cuponAplicado.valorDescuento) / 100);
+    } else {
+      return cuponAplicado.valorDescuento;
+    }
+  };
+
   const validateField = (fieldName, value) => {
     let validation;
 
@@ -504,7 +579,13 @@ export default function Pago() {
       setError("Selecciona un bus o marca 'No necesito transporte terrestre'.");
       return;
     }
-    setCurrentStep(3);
+    setCurrentStep(3); // ← Ahora va al paso 3 (cupones)
+    setError("");
+  };
+
+  // ========== NUEVO: Handler para continuar desde cupones ==========
+  const handleContinueFromCupones = () => {
+    setCurrentStep(4); // ← Va al paso 4 (pago)
     setError("");
   };
 
@@ -512,7 +593,6 @@ export default function Pago() {
     if (!fechaString) return 'Fecha no disponible';
 
     try {
-      // Si viene en formato YYYY-MM-DD
       const [year, month, day] = fechaString.split('-');
       return `${day}/${month}`;
     } catch (error) {
@@ -520,10 +600,9 @@ export default function Pago() {
     }
   };
 
-  const total = useMemo(() =>
-    totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos,
-    [totalVuelo, totalBuses, skipBus, costoTotalAsientos]
-  );
+  const descuento = calcularDescuento();
+  const subtotal = totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos;
+  const total = subtotal - descuento;
 
   const resumen = useMemo(() => {
     return {
@@ -558,7 +637,10 @@ export default function Pago() {
       costoAsientosIda,
       costoAsientosVuelta,
       costoTotalAsientos,
-      total: totalVuelo + (skipBus ? 0 : totalBuses) + costoTotalAsientos,
+      subtotal,
+      descuento,
+      total,
+      cupon: cuponAplicado,
       pasajero: passengerData,
       isRT,
     };
@@ -576,6 +658,10 @@ export default function Pago() {
     costoAsientosIda,
     costoAsientosVuelta,
     costoTotalAsientos,
+    subtotal,
+    descuento,
+    total,
+    cuponAplicado,
     passengerData,
     isRT,
   ]);
@@ -681,21 +767,22 @@ export default function Pago() {
         vueloVuelta: vueloVueltaData,
         buses: busesData,
         asientos: asientosData,
+        cupon: cuponAplicado ? {
+          codigo: cuponAplicado.codigo,
+          descuento: descuento
+        } : null,
+        subtotal: subtotal,
+        descuento: descuento,
         total: Number(resumen.total) || 0,
         metodoPago: selectedPaymentMethod,
       };
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('📤 Enviando payload al backend:');
-      console.log('Pasajero:', payload.pasajero.nombre, payload.pasajero.apellido);
-      console.log('Vuelo Ida:', payload.vueloIda?.idViaje, `(${payload.vueloIda?.origen} → ${payload.vueloIda?.destino})`);
-      console.log('Vuelo Vuelta:', payload.vueloVuelta?.idViaje || 'N/A', payload.vueloVuelta ? `(${payload.vueloVuelta?.origen} → ${payload.vueloVuelta?.destino})` : '');
-      console.log('Buses:', payload.buses.length);
-      console.log('Asientos Ida:', payload.asientos.asientosIda.map(a => a.numero).join(', ') || 'Ninguno');
-      console.log('Asientos Vuelta:', payload.asientos.asientosVuelta.map(a => a.numero).join(', ') || 'Ninguno');
-      console.log('Costo Asientos:', CLP(payload.asientos.costoTotalAsientos));
+      console.log('Subtotal:', CLP(payload.subtotal));
+      console.log('Descuento:', CLP(payload.descuento));
       console.log('Total:', CLP(payload.total));
-      console.log('Método de pago:', payload.metodoPago);
+      console.log('Cupón:', payload.cupon?.codigo || 'Sin cupón');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       const reservaResp = await axios.post(
@@ -714,11 +801,11 @@ export default function Pago() {
         vueloVuelta: payload.vueloVuelta,
         buses: payload.buses,
         asientos: payload.asientos,
+        cupon: payload.cupon,
+        subtotal: payload.subtotal,
+        descuento: payload.descuento,
         total: payload.total,
       };
-
-      console.log('💳 Payload para gateway de pago:', paymentPayload);
-      console.log('💰 Total a cobrar:', CLP(paymentPayload.total));
 
       if (selectedPaymentMethod === "stripe") {
         const r = await axios.post(
@@ -726,7 +813,6 @@ export default function Pago() {
           paymentPayload
         );
         if (r.data?.url) {
-          console.log('🔗 Redirigiendo a Stripe:', r.data.url);
           window.location.href = r.data.url;
           return;
         }
@@ -739,7 +825,6 @@ export default function Pago() {
           paymentPayload
         );
         if (r.data?.init_point) {
-          console.log('🔗 Redirigiendo a MercadoPago:', r.data.init_point);
           window.location.href = r.data.init_point;
           return;
         }
@@ -752,7 +837,6 @@ export default function Pago() {
           paymentPayload
         );
         if (r.data?.approveUrl) {
-          console.log('🔗 Redirigiendo a PayPal:', r.data.approveUrl);
           window.location.href = r.data.approveUrl;
           return;
         }
@@ -760,9 +844,6 @@ export default function Pago() {
       }
     } catch (e) {
       console.error('❌ Error completo:', e);
-      console.error('📋 Respuesta del servidor:', e.response?.data);
-      console.error('📊 Status:', e.response?.status);
-      console.error('📝 Headers:', e.response?.headers);
 
       const errorMsg = e.response?.data?.error ||
         e.response?.data?.message ||
@@ -880,6 +961,7 @@ export default function Pago() {
           </div>
         )}
 
+        {/* PASO 1: Datos del Pasajero */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 1 ? "border-purple-600" : "border-gray-200"
             }`}
@@ -899,6 +981,7 @@ export default function Pago() {
 
           {currentStep === 1 && (
             <div className="px-4 pb-6">
+              {/* ... (mantener todo el contenido del paso 1 igual - ya está en el documento original) ... */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ValidatedInput
                   label="Nombre"
@@ -1104,6 +1187,7 @@ export default function Pago() {
           )}
         </div>
 
+        {/* PASO 2: Conexiones de Bus - (mantener igual, solo cambiar el botón final) */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 2 ? "border-purple-600" : "border-gray-200"
             }`}
@@ -1257,28 +1341,251 @@ export default function Pago() {
                   disabled={!skipBus && selectedBuses.length === 0}
                   className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  CONTINUAR A PAGO
+                  CONTINUAR A CUPONES
                 </button>
               </div>
             </div>
           )}
         </div>
 
+        {/* ========== PASO 3: APLICAR CUPÓN (NUEVO) ========== */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 3 ? "border-purple-600" : "border-gray-200"
             }`}
         >
-          <button className="w-full flex items-center gap-3 p-4 text-left">
+          <button
+            onClick={() => currentStep > 3 && setCurrentStep(3)}
+            className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50"
+          >
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${currentStep >= 3 ? "bg-purple-600 text-white" : "bg-gray-300"
                 }`}
             >
               3
             </div>
-            <h2 className="text-lg font-bold text-gray-900">Pago</h2>
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              Aplicar Cupón
+              {cuponAplicado && <Tag className="w-4 h-4 text-green-600" />}
+            </h2>
           </button>
 
           {currentStep === 3 && (
+            <div className="px-4 pb-6 space-y-6">
+              
+              {/* Resumen del Carrito */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Resumen de tu compra
+                </h3>
+                
+                <div className="space-y-3">
+                  {/* Vuelo Ida */}
+                  {resumen.vueloIda && (
+                    <div className="flex justify-between items-start pb-3 border-b">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          Vuelo {resumen.vueloIda.origen} → {resumen.vueloIda.destino}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {resumen.vueloIda.tarifaNombre}
+                        </p>
+                      </div>
+                      <p className="font-bold text-gray-900">{CLP(resumen.vueloIda.precio)}</p>
+                    </div>
+                  )}
+
+                  {/* Vuelo Vuelta */}
+                  {resumen.isRT && resumen.vueloVuelta && (
+                    <div className="flex justify-between items-start pb-3 border-b">
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          Vuelo {resumen.vueloVuelta.origen} → {resumen.vueloVuelta.destino} (Vuelta)
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {resumen.vueloVuelta.tarifaNombre}
+                        </p>
+                      </div>
+                      <p className="font-bold text-gray-900">{CLP(resumen.vueloVuelta.precio)}</p>
+                    </div>
+                  )}
+
+                  {/* Asientos Ida */}
+                  {resumen.asientosIda && resumen.asientosIda.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">
+                        Asientos (ida): {resumen.asientosIda.map(a => a.numero).join(', ')}
+                      </span>
+                      <span className="font-semibold">{CLP(resumen.costoAsientosIda)}</span>
+                    </div>
+                  )}
+
+                  {/* Asientos Vuelta */}
+                  {resumen.asientosVuelta && resumen.asientosVuelta.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">
+                        Asientos (vuelta): {resumen.asientosVuelta.map(a => a.numero).join(', ')}
+                      </span>
+                      <span className="font-semibold">{CLP(resumen.costoAsientosVuelta)}</span>
+                    </div>
+                  )}
+
+                  {/* Buses */}
+                  {!skipBus && resumen.buses.map((bus, idx) => (
+                    <div key={idx} className="flex justify-between text-sm">
+                      <span className="text-gray-600">
+                        Bus: {bus.empresa} ({bus.ciudadOrigen || bus.origen} → {bus.ciudadDestino || bus.destino})
+                      </span>
+                      <span className="font-semibold">{CLP(bus.precioAdulto)}</span>
+                    </div>
+                  ))}
+
+                  <div className="border-t pt-3 mt-3">
+                    <div className="flex justify-between text-lg mb-2">
+                      <span className="font-semibold">Subtotal</span>
+                      <span className="font-bold">{CLP(subtotal)}</span>
+                    </div>
+
+                    {cuponAplicado && descuento > 0 && (
+                      <div className="flex justify-between text-green-600 mb-2">
+                        <span className="font-semibold flex items-center gap-1">
+                          <Percent className="w-4 h-4" />
+                          Descuento ({cuponAplicado.codigo})
+                        </span>
+                        <span className="font-bold">-{CLP(descuento)}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-xl border-t pt-3 mt-2">
+                      <span className="font-bold">Total</span>
+                      <span className="font-bold text-purple-600">{CLP(total)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cupón Aplicado */}
+              {cuponAplicado ? (
+                <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <span className="text-green-800 font-bold">¡Cupón aplicado!</span>
+                      </div>
+                      <div className="ml-10 space-y-1">
+                        <p className="text-sm text-green-700">
+                          <span className="font-semibold">Código:</span> {cuponAplicado.codigo}
+                        </p>
+                        <p className="text-sm text-green-700">
+                          <span className="font-semibold">Descuento:</span>{' '}
+                          {cuponAplicado.tipoCupon === 'porcentaje' 
+                            ? `${cuponAplicado.valorDescuento}%` 
+                            : CLP(cuponAplicado.valorDescuento)
+                          }
+                        </p>
+                        {cuponAplicado.descripcion && (
+                          <p className="text-xs text-green-600">{cuponAplicado.descripcion}</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={eliminarCupon}
+                      className="text-red-600 hover:text-red-700 font-semibold text-sm px-3 py-1 rounded hover:bg-red-50"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Formulario de Cupón */
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    ¿Tienes un cupón de descuento?
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={codigoCupon}
+                      onChange={(e) => setCodigoCupon(e.target.value.toUpperCase())}
+                      onKeyPress={(e) => e.key === 'Enter' && validarCupon()}
+                      placeholder="DESCUENTO2024"
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent uppercase"
+                      disabled={loadingCupon}
+                    />
+                    <button
+                      onClick={validarCupon}
+                      disabled={loadingCupon || !codigoCupon.trim()}
+                      className="px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {loadingCupon ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                          Validando...
+                        </>
+                      ) : (
+                        <>
+                          <Tag className="w-4 h-4" />
+                          Aplicar
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {errorCupon && (
+                    <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" />
+                      {errorCupon}
+                    </p>
+                  )}
+                  
+                  <p className="text-xs text-gray-500 mt-2">
+                    Ingresa tu código de cupón para obtener descuentos adicionales
+                  </p>
+                </div>
+              )}
+
+              {/* Botones de Navegación */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setCurrentStep(2)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 rounded-lg"
+                >
+                  VOLVER
+                </button>
+                <button
+                  onClick={handleContinueFromCupones}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg"
+                >
+                  {cuponAplicado ? 'CONTINUAR CON DESCUENTO' : 'CONTINUAR SIN CUPÓN'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* PASO 4: Pago (antes era paso 3) */}
+        <div
+          className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 4 ? "border-purple-600" : "border-gray-200"
+            }`}
+        >
+          <button className="w-full flex items-center gap-3 p-4 text-left">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${currentStep >= 4 ? "bg-purple-600 text-white" : "bg-gray-300"
+                }`}
+            >
+              4
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">Pago</h2>
+          </button>
+
+          {currentStep === 4 && (
             <div className="px-4 pb-6 space-y-4">
               <div className="border-2 border-purple-600 rounded-2xl p-4 flex flex-col gap-3">
                 {resumen.vueloIda && (
@@ -1394,6 +1701,19 @@ export default function Pago() {
                         <span className="font-semibold">{CLP(b.precioAdulto)}</span>
                       </div>
                     ))}
+
+                  {cuponAplicado && descuento > 0 && (
+                    <>
+                      <div className="border-t pt-2 mt-2 flex justify-between">
+                        <span className="text-gray-600">Subtotal</span>
+                        <span className="font-semibold">{CLP(subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-green-600">
+                        <span className="font-semibold">Descuento ({cuponAplicado.codigo})</span>
+                        <span className="font-semibold">-{CLP(descuento)}</span>
+                      </div>
+                    </>
+                  )}
 
                   <div className="border-t pt-2 mt-2 flex justify-between text-lg font-bold">
                     <span>Total</span>
