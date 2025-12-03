@@ -1,6 +1,8 @@
 // src/Pages/Vuelos/SeleccionAsientos.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext"; // ✅ NUEVO
+import LoginModal from "../../Components/LoginModal"; // ✅ NUEVO
 
 /* ---------- helpers ---------- */
 const lsGet = (k) => {
@@ -19,17 +21,18 @@ const lsSet = (k, v) => {
 
 // Constantes de precios
 const PRECIOS_ASIENTOS = {
-  premium: 25000,        // Primera clase / Premium
-  confort: 15000,        // Asientos confort+
-  salidaEmergencia: 12000, // Salida de emergencia
-  primeraFila: 10000,    // Primera fila
-  estandar: 8000,        // Selección manual estándar
-  aleatorio: 0           // Asignación aleatoria (gratis)
+  premium: 25000,
+  confort: 15000,
+  salidaEmergencia: 12000,
+  primeraFila: 10000,
+  estandar: 8000,
+  aleatorio: 0
 };
 
 export default function SeleccionAsientos() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, showLoginModal, setShowLoginModal } = useAuth(); // ✅ NUEVO
 
   const inicial = useMemo(
     () => location.state ?? lsGet("airlink_datos_viaje"),
@@ -43,9 +46,8 @@ export default function SeleccionAsientos() {
   const [asientosSeleccionadosIda, setAsientosSeleccionadosIda] = useState([]);
   const [asientosSeleccionadosVuelta, setAsientosSeleccionadosVuelta] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // Nuevo estado para modo de selección
-  const [modoSeleccion, setModoSeleccion] = useState("manual"); // "manual" o "aleatorio"
+  const [modoSeleccion, setModoSeleccion] = useState("manual");
+  const [showRegisterModal, setShowRegisterModal] = useState(false); // ✅ NUEVO
 
   useEffect(() => {
     if (!datosViaje || !datosViaje?.vueloIda?.idViaje) {
@@ -100,32 +102,27 @@ export default function SeleccionAsientos() {
         let caracteristicas = [];
         let precio = PRECIOS_ASIENTOS.estandar;
 
-        // Primera clase (filas 1-3)
         if (fila <= 3) {
           tipo = "premium";
           precio = PRECIOS_ASIENTOS.premium;
           caracteristicas.push("Primera Clase", "Espacio Extra", "Servicio Premium");
         }
-        // Confort+ (filas 4-7)
         else if (fila <= 7) {
           tipo = "confort";
           precio = PRECIOS_ASIENTOS.confort;
           caracteristicas.push("Confort+", "Más Espacio");
         }
-        // Salida de emergencia (filas 10 y 20)
         else if (fila === 10 || fila === 20) {
           tipo = "salidaEmergencia";
           precio = PRECIOS_ASIENTOS.salidaEmergencia;
           caracteristicas.push("Salida de Emergencia", "Espacio Extra para Piernas");
         }
-        // Primera fila de económica (fila 8)
         else if (fila === 8) {
           tipo = "primeraFila";
           precio = PRECIOS_ASIENTOS.primeraFila;
           caracteristicas.push("Primera Fila", "Sin asiento adelante");
         }
 
-        // Características adicionales por letra
         if (letra === "A" || letra === "F") {
           caracteristicas.push("Ventana");
         } else if (letra === "C" || letra === "D") {
@@ -162,7 +159,7 @@ export default function SeleccionAsientos() {
 
   const handleSeleccionAsiento = (asiento) => {
     if (!asiento?.disponible) return;
-    if (modoSeleccion === "aleatorio") return; // No permitir selección manual en modo aleatorio
+    if (modoSeleccion === "aleatorio") return;
     
     const ya = seleccionados.find((a) => a.numero === asiento.numero);
     if (ya) {
@@ -181,7 +178,7 @@ export default function SeleccionAsientos() {
       const asiento = disponibles.splice(idx, 1)[0];
       aleatorios.push({
         ...asiento,
-        precio: 0 // Sin cargo para asientos aleatorios
+        precio: 0
       });
     }
     
@@ -205,13 +202,20 @@ export default function SeleccionAsientos() {
     
     if (datosViaje?.vueloVuelta) {
       setVueloActual("vuelta");
-      setModoSeleccion("manual"); // Reset para vuelta
+      setModoSeleccion("manual");
     } else {
       continuarAPago();
     }
   };
 
+  // ✅ MODIFICADO: Verificar autenticación antes de ir a pago
   const continuarAPago = () => {
+    // Verificar si el usuario está logueado
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+
     // Asignar aleatorios si es necesario
     if (modoSeleccion === "aleatorio") {
       if (vueloActual === "ida" && asientosSeleccionadosIda.length === 0) {
@@ -275,271 +279,283 @@ export default function SeleccionAsientos() {
   const costoActual = calcularCostoAsientos();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-purple-600 text-white py-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <h1 className="text-3xl font-bold">
-            Selección de Asientos — {vueloActual === "ida" ? "Ida" : "Vuelta"}
-          </h1>
-          <p className="text-purple-100 mt-2">
-            {vueloInfo?.origenCodigo} → {vueloInfo?.destinoCodigo} · Selecciona{" "}
-            {pasajeros} asiento(s)
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Selector de modo */}
-        <div className="mb-6 bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-bold mb-4">¿Cómo deseas elegir tus asientos?</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button
-              onClick={() => {
-                setModoSeleccion("aleatorio");
-                setSeleccionados([]);
-              }}
-              className={`p-6 border-2 rounded-lg text-left transition-all ${
-                modoSeleccion === "aleatorio"
-                  ? "border-purple-600 bg-purple-50"
-                  : "border-gray-200 hover:border-purple-300"
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="text-2xl">🎲</div>
-                <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                  modoSeleccion === "aleatorio" 
-                    ? "bg-green-100 text-green-700" 
-                    : "bg-gray-100 text-gray-600"
-                }`}>
-                  GRATIS
-                </div>
-              </div>
-              <h4 className="font-bold text-lg mb-1">Asignación Aleatoria</h4>
-              <p className="text-sm text-gray-600">
-                Te asignaremos asientos automáticamente sin costo adicional
-              </p>
-            </button>
-
-            <button
-              onClick={() => {
-                setModoSeleccion("manual");
-                setSeleccionados([]);
-              }}
-              className={`p-6 border-2 rounded-lg text-left transition-all ${
-                modoSeleccion === "manual"
-                  ? "border-purple-600 bg-purple-50"
-                  : "border-gray-200 hover:border-purple-300"
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="text-2xl">🎯</div>
-                <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                  modoSeleccion === "manual" 
-                    ? "bg-purple-100 text-purple-700" 
-                    : "bg-gray-100 text-gray-600"
-                }`}>
-                  Desde ${PRECIOS_ASIENTOS.estandar.toLocaleString()}
-                </div>
-              </div>
-              <h4 className="font-bold text-lg mb-1">Elegir Mis Asientos</h4>
-              <p className="text-sm text-gray-600">
-                Selecciona tus asientos preferidos (ventana, pasillo, premium, etc.)
-              </p>
-            </button>
+    <>
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-purple-600 text-white py-6">
+          <div className="max-w-7xl mx-auto px-4">
+            <h1 className="text-3xl font-bold">
+              Selección de Asientos — {vueloActual === "ida" ? "Ida" : "Vuelta"}
+            </h1>
+            <p className="text-purple-100 mt-2">
+              {vueloInfo?.origenCodigo} → {vueloInfo?.destinoCodigo} · Selecciona{" "}
+              {pasajeros} asiento(s)
+            </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <div className="mb-6">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium">
-                    Asientos: {seleccionados.length}/{pasajeros}
-                  </span>
-                  {modoSeleccion === "manual" && (
-                    <span className="text-sm text-gray-500">
-                      {seleccionados.map((a) => a.numero).join(", ")}
-                    </span>
-                  )}
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-purple-600 h-2 rounded-full transition-all"
-                    style={{
-                      width: `${(seleccionados.length / pasajeros) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {modoSeleccion === "manual" ? (
-                <>
-                  <MapaAsientos
-                    asientos={asientosActuales}
-                    seleccionados={seleccionados}
-                    onSelect={handleSeleccionAsiento}
-                  />
-
-                  <LeyendaAsientos />
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  <div className="text-6xl mb-4">✈️</div>
-                  <h3 className="text-xl font-bold mb-2">Asignación Automática</h3>
-                  <p className="text-gray-600 mb-4">
-                    Tus asientos serán asignados automáticamente al continuar
-                  </p>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-md mx-auto">
-                    <p className="text-green-800 font-semibold">
-                      🎉 Sin costo adicional
-                    </p>
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {/* Selector de modo */}
+          <div className="mb-6 bg-white rounded-lg shadow-md p-6">
+            <h3 className="text-lg font-bold mb-4">¿Cómo deseas elegir tus asientos?</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                onClick={() => {
+                  setModoSeleccion("aleatorio");
+                  setSeleccionados([]);
+                }}
+                className={`p-6 border-2 rounded-lg text-left transition-all ${
+                  modoSeleccion === "aleatorio"
+                    ? "border-purple-600 bg-purple-50"
+                    : "border-gray-200 hover:border-purple-300"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="text-2xl">🎲</div>
+                  <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    modoSeleccion === "aleatorio" 
+                      ? "bg-green-100 text-green-700" 
+                      : "bg-gray-100 text-gray-600"
+                  }`}>
+                    GRATIS
                   </div>
                 </div>
-              )}
+                <h4 className="font-bold text-lg mb-1">Asignación Aleatoria</h4>
+                <p className="text-sm text-gray-600">
+                  Te asignaremos asientos automáticamente sin costo adicional
+                </p>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModoSeleccion("manual");
+                  setSeleccionados([]);
+                }}
+                className={`p-6 border-2 rounded-lg text-left transition-all ${
+                  modoSeleccion === "manual"
+                    ? "border-purple-600 bg-purple-50"
+                    : "border-gray-200 hover:border-purple-300"
+                }`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="text-2xl">🎯</div>
+                  <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    modoSeleccion === "manual" 
+                      ? "bg-purple-100 text-purple-700" 
+                      : "bg-gray-100 text-gray-600"
+                  }`}>
+                    Desde ${PRECIOS_ASIENTOS.estandar.toLocaleString()}
+                  </div>
+                </div>
+                <h4 className="font-bold text-lg mb-1">Elegir Mis Asientos</h4>
+                <p className="text-sm text-gray-600">
+                  Selecciona tus asientos preferidos (ventana, pasillo, premium, etc.)
+                </p>
+              </button>
             </div>
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-md p-6 sticky top-6">
-              <h3 className="text-xl font-bold mb-4">Resumen</h3>
-
-              <div className="space-y-3 mb-6">
-                {seleccionados.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-4">
-                    {modoSeleccion === "aleatorio" 
-                      ? "Asientos se asignarán automáticamente" 
-                      : "Selecciona asientos"}
-                  </p>
-                ) : (
-                  seleccionados.map((asiento, i) => (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="mb-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-medium">
+                      Asientos: {seleccionados.length}/{pasajeros}
+                    </span>
+                    {modoSeleccion === "manual" && (
+                      <span className="text-sm text-gray-500">
+                        {seleccionados.map((a) => a.numero).join(", ")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      key={asiento.numero}
-                      className="p-3 bg-purple-50 rounded-lg"
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <div className="font-semibold">Pasajero {i + 1}</div>
-                          <div className="text-sm text-gray-600">
-                            Asiento {asiento.numero}
+                      className="bg-purple-600 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${(seleccionados.length / pasajeros) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {modoSeleccion === "manual" ? (
+                  <>
+                    <MapaAsientos
+                      asientos={asientosActuales}
+                      seleccionados={seleccionados}
+                      onSelect={handleSeleccionAsiento}
+                    />
+
+                    <LeyendaAsientos />
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">✈️</div>
+                    <h3 className="text-xl font-bold mb-2">Asignación Automática</h3>
+                    <p className="text-gray-600 mb-4">
+                      Tus asientos serán asignados automáticamente al continuar
+                    </p>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-md mx-auto">
+                      <p className="text-green-800 font-semibold">
+                        🎉 Sin costo adicional
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-lg shadow-md p-6 sticky top-6">
+                <h3 className="text-xl font-bold mb-4">Resumen</h3>
+
+                <div className="space-y-3 mb-6">
+                  {seleccionados.length === 0 ? (
+                    <p className="text-gray-500 text-sm text-center py-4">
+                      {modoSeleccion === "aleatorio" 
+                        ? "Asientos se asignarán automáticamente" 
+                        : "Selecciona asientos"}
+                    </p>
+                  ) : (
+                    seleccionados.map((asiento, i) => (
+                      <div
+                        key={asiento.numero}
+                        className="p-3 bg-purple-50 rounded-lg"
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <div>
+                            <div className="font-semibold">Pasajero {i + 1}</div>
+                            <div className="text-sm text-gray-600">
+                              Asiento {asiento.numero}
+                            </div>
                           </div>
+                          {modoSeleccion === "manual" && (
+                            <button
+                              onClick={() => handleSeleccionAsiento(asiento)}
+                              className="text-red-500 text-xl"
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
-                        {modoSeleccion === "manual" && (
-                          <button
-                            onClick={() => handleSeleccionAsiento(asiento)}
-                            className="text-red-500 text-xl"
-                          >
-                            ×
-                          </button>
+                        {asiento.caracteristicas && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {asiento.caracteristicas.slice(0, 2).map((car, idx) => (
+                              <span
+                                key={idx}
+                                className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded"
+                              >
+                                {car}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {modoSeleccion === "manual" && asiento.precio > 0 && (
+                          <div className="text-right text-sm font-semibold text-purple-600 mt-2">
+                            +${asiento.precio.toLocaleString()}
+                          </div>
                         )}
                       </div>
-                      {asiento.caracteristicas && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {asiento.caracteristicas.slice(0, 2).map((car, idx) => (
-                            <span
-                              key={idx}
-                              className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded"
-                            >
-                              {car}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {modoSeleccion === "manual" && asiento.precio > 0 && (
-                        <div className="text-right text-sm font-semibold text-purple-600 mt-2">
-                          +${asiento.precio.toLocaleString()}
-                        </div>
-                      )}
+                    ))
+                  )}
+                </div>
+
+                {/* Costo total */}
+                <div className="border-t pt-4 mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-600">Costo asientos:</span>
+                    <span className="text-xl font-bold text-purple-600">
+                      {modoSeleccion === "aleatorio" || costoActual === 0
+                        ? "GRATIS"
+                        : `$${costoActual.toLocaleString()}`}
+                    </span>
+                  </div>
+                </div>
+
+                {datosViaje?.vueloVuelta && (
+                  <div className="mb-4 p-3 bg-blue-50 rounded">
+                    <div className="text-sm font-medium mb-2">
+                      {vueloActual === "ida" ? "1/2 · Ida" : "2/2 · Vuelta"}
                     </div>
-                  ))
+                    <div className="flex gap-2">
+                      <div
+                        className={`flex-1 h-2 rounded ${
+                          vueloActual === "ida"
+                            ? "bg-purple-600"
+                            : "bg-purple-300"
+                        }`}
+                      />
+                      <div
+                        className={`flex-1 h-2 rounded ${
+                          vueloActual === "vuelta"
+                            ? "bg-purple-600"
+                            : "bg-gray-200"
+                        }`}
+                      />
+                    </div>
+                  </div>
                 )}
-              </div>
 
-              {/* Costo total */}
-              <div className="border-t pt-4 mb-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-600">Costo asientos:</span>
-                  <span className="text-xl font-bold text-purple-600">
-                    {modoSeleccion === "aleatorio" || costoActual === 0
-                      ? "GRATIS"
-                      : `$${costoActual.toLocaleString()}`}
-                  </span>
-                </div>
-              </div>
-
-              {datosViaje?.vueloVuelta && (
-                <div className="mb-4 p-3 bg-blue-50 rounded">
-                  <div className="text-sm font-medium mb-2">
-                    {vueloActual === "ida" ? "1/2 · Ida" : "2/2 · Vuelta"}
-                  </div>
-                  <div className="flex gap-2">
-                    <div
-                      className={`flex-1 h-2 rounded ${
-                        vueloActual === "ida"
-                          ? "bg-purple-600"
-                          : "bg-purple-300"
-                      }`}
-                    />
-                    <div
-                      className={`flex-1 h-2 rounded ${
-                        vueloActual === "vuelta"
-                          ? "bg-purple-600"
-                          : "bg-gray-200"
-                      }`}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                {vueloActual === "ida" ? (
-                  datosViaje?.vueloVuelta ? (
-                    <button
-                      onClick={continuarSiguienteVuelo}
-                      disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
-                      className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
-                    >
-                      Continuar a vuelo de vuelta →
-                    </button>
+                <div className="space-y-3">
+                  {vueloActual === "ida" ? (
+                    datosViaje?.vueloVuelta ? (
+                      <button
+                        onClick={continuarSiguienteVuelo}
+                        disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
+                        className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
+                      >
+                        Continuar a vuelo de vuelta →
+                      </button>
+                    ) : (
+                      <button
+                        onClick={continuarAPago}
+                        disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
+                        className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
+                      >
+                        Continuar al pago →
+                      </button>
+                    )
                   ) : (
-                    <button
-                      onClick={continuarAPago}
-                      disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
-                      className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
-                    >
-                      Continuar al pago →
-                    </button>
-                  )
-                ) : (
-                  <>
-                    <button
-                      onClick={continuarAPago}
-                      disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
-                      className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
-                    >
-                      Continuar al pago →
-                    </button>
-                    <button
-                      onClick={() => {
-                        setVueloActual("ida");
-                        setModoSeleccion("manual");
-                      }}
-                      className="w-full bg-gray-100 py-3 rounded-lg hover:bg-gray-200 transition-all"
-                    >
-                      ← Volver a ida
-                    </button>
-                  </>
-                )}
+                    <>
+                      <button
+                        onClick={continuarAPago}
+                        disabled={modoSeleccion === "manual" && seleccionados.length !== pasajeros}
+                        className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold transition-all"
+                      >
+                        Continuar al pago →
+                      </button>
+                      <button
+                        onClick={() => {
+                          setVueloActual("ida");
+                          setModoSeleccion("manual");
+                        }}
+                        className="w-full bg-gray-100 py-3 rounded-lg hover:bg-gray-200 transition-all"
+                      >
+                        ← Volver a ida
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* ✅ NUEVO: Modal de Login */}
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)}
+        onSwitchToRegister={() => {
+          setShowLoginModal(false);
+          setShowRegisterModal(true);
+        }}
+      />
+    </>
   );
 }
 
-/* ---------- Subcomponentes ---------- */
+/* ---------- Subcomponentes (sin cambios) ---------- */
 function MapaAsientos({ asientos, seleccionados, onSelect }) {
   const LEFT = ["A", "B", "C"];
   const RIGHT = ["D", "E", "F"];
@@ -610,13 +626,8 @@ function MapaAsientos({ asientos, seleccionados, onSelect }) {
 
       {/* Filas de asientos */}
       {Array.from({ length: 30 }, (_, i) => i + 1).map((fila) => {
-        const esPremium = fila <= 3;
-        const esConfort = fila > 3 && fila <= 7;
-        const esSalidaEmergencia = fila === 10 || fila === 20;
-        
         return (
           <div key={fila} className="w-full">
-            {/* Separador visual para secciones */}
             {(fila === 4 || fila === 8) && (
               <div className="h-4 flex items-center justify-center">
                 <div className="w-full border-t-2 border-dashed border-gray-300" />
@@ -653,7 +664,6 @@ function MapaAsientos({ asientos, seleccionados, onSelect }) {
                         </span>
                       </div>
                       
-                      {/* Tooltip */}
                       {asiento.disponible && (
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                           <div className="bg-gray-900 text-white text-xs rounded py-2 px-3 whitespace-nowrap">
@@ -704,7 +714,6 @@ function MapaAsientos({ asientos, seleccionados, onSelect }) {
                         </span>
                       </div>
                       
-                      {/* Tooltip */}
                       {asiento.disponible && (
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                           <div className="bg-gray-900 text-white text-xs rounded py-2 px-3 whitespace-nowrap">

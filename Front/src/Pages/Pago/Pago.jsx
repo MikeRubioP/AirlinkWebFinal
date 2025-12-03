@@ -103,7 +103,6 @@ export default function Pago() {
     telefono: "",
   });
 
-  // Estados de validación
   const [touched, setTouched] = useState({
     nombre: false,
     apellido: false,
@@ -124,7 +123,6 @@ export default function Pago() {
     telefono: [],
   });
 
-  // ========== NUEVO: Estados para cupones ==========
   const [codigoCupon, setCodigoCupon] = useState('');
   const [cuponAplicado, setCuponAplicado] = useState(null);
   const [errorCupon, setErrorCupon] = useState('');
@@ -327,8 +325,6 @@ export default function Pago() {
     });
   };
 
-  // ========== NUEVO: Funciones para cupones ==========
-  
   const validarCupon = async () => {
     if (!codigoCupon.trim()) {
       setErrorCupon('Ingresa un código de cupón');
@@ -551,41 +547,17 @@ export default function Pago() {
     { id: "paypal", name: "PayPal", description: "Pago internacional seguro", icon: <Building2 className="w-6 h-6" />, color: "bg-sky-400" },
   ];
 
-  const validatePassengerForm = () => {
-    const required = ["nombre", "apellido", "fechaNacimiento", "genero", "numeroDocumento", "correo", "telefono"];
-    const empty = required.filter((f) => !String(passengerData[f] || "").trim());
-    if (empty.length > 0) {
-      setError(`Por favor completa: ${empty.join(", ")}`);
-      return false;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(passengerData.correo)) {
-      setError("Correo electrónico no válido");
-      return false;
-    }
-    if (!vueloNorm || !tarifaNorm) {
-      setError("No se encontró la selección de vuelo de ida. Vuelve a Detalle y elige una tarifa.");
-      return false;
-    }
-    if (isRT && (!vueloNormVuelta || !tarifaNormVuelta)) {
-      setError("Seleccionaste ida y vuelta, pero falta la información de la vuelta.");
-      return false;
-    }
-    return true;
-  };
-
   const handleContinueFromBuses = () => {
     if (!skipBus && selectedBuses.length === 0) {
       setError("Selecciona un bus o marca 'No necesito transporte terrestre'.");
       return;
     }
-    setCurrentStep(3); // ← Ahora va al paso 3 (cupones)
+    setCurrentStep(3);
     setError("");
   };
 
-  // ========== NUEVO: Handler para continuar desde cupones ==========
   const handleContinueFromCupones = () => {
-    setCurrentStep(4); // ← Va al paso 4 (pago)
+    setCurrentStep(4);
     setError("");
   };
 
@@ -807,6 +779,10 @@ export default function Pago() {
         total: payload.total,
       };
 
+      // ✅ CRÍTICO: Marcar que estamos en proceso de pago
+      localStorage.setItem("payment_ok", "true");
+      console.log('✅ payment_ok seteado en localStorage');
+
       if (selectedPaymentMethod === "stripe") {
         const r = await axios.post(
           "http://localhost:5174/pagos/stripe/create-session",
@@ -844,6 +820,9 @@ export default function Pago() {
       }
     } catch (e) {
       console.error('❌ Error completo:', e);
+
+      // ✅ Si hay error, limpiar la bandera
+      localStorage.removeItem("payment_ok");
 
       const errorMsg = e.response?.data?.error ||
         e.response?.data?.message ||
@@ -981,7 +960,6 @@ export default function Pago() {
 
           {currentStep === 1 && (
             <div className="px-4 pb-6">
-              {/* ... (mantener todo el contenido del paso 1 igual - ya está en el documento original) ... */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ValidatedInput
                   label="Nombre"
@@ -1187,7 +1165,7 @@ export default function Pago() {
           )}
         </div>
 
-        {/* PASO 2: Conexiones de Bus - (mantener igual, solo cambiar el botón final) */}
+        {/* PASO 2: Conexiones de Bus */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 2 ? "border-purple-600" : "border-gray-200"
             }`}
@@ -1348,7 +1326,7 @@ export default function Pago() {
           )}
         </div>
 
-        {/* ========== PASO 3: APLICAR CUPÓN (NUEVO) ========== */}
+        {/* PASO 3: APLICAR CUPÓN */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 3 ? "border-purple-600" : "border-gray-200"
             }`}
@@ -1382,7 +1360,6 @@ export default function Pago() {
                 </h3>
                 
                 <div className="space-y-3">
-                  {/* Vuelo Ida */}
                   {resumen.vueloIda && (
                     <div className="flex justify-between items-start pb-3 border-b">
                       <div>
@@ -1397,7 +1374,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* Vuelo Vuelta */}
                   {resumen.isRT && resumen.vueloVuelta && (
                     <div className="flex justify-between items-start pb-3 border-b">
                       <div>
@@ -1412,7 +1388,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* Asientos Ida */}
                   {resumen.asientosIda && resumen.asientosIda.length > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">
@@ -1422,7 +1397,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* Asientos Vuelta */}
                   {resumen.asientosVuelta && resumen.asientosVuelta.length > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">
@@ -1432,7 +1406,6 @@ export default function Pago() {
                     </div>
                   )}
 
-                  {/* Buses */}
                   {!skipBus && resumen.buses.map((bus, idx) => (
                     <div key={idx} className="flex justify-between text-sm">
                       <span className="text-gray-600">
@@ -1466,7 +1439,6 @@ export default function Pago() {
                 </div>
               </div>
 
-              {/* Cupón Aplicado */}
               {cuponAplicado ? (
                 <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
                   <div className="flex items-start justify-between">
@@ -1504,7 +1476,6 @@ export default function Pago() {
                   </div>
                 </div>
               ) : (
-                /* Formulario de Cupón */
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">
                     ¿Tienes un cupón de descuento?
@@ -1551,7 +1522,6 @@ export default function Pago() {
                 </div>
               )}
 
-              {/* Botones de Navegación */}
               <div className="flex gap-3">
                 <button
                   onClick={() => setCurrentStep(2)}
@@ -1570,7 +1540,7 @@ export default function Pago() {
           )}
         </div>
 
-        {/* PASO 4: Pago (antes era paso 3) */}
+        {/* PASO 4: Pago */}
         <div
           className={`bg-white rounded-2xl shadow-sm overflow-hidden border-2 ${currentStep === 4 ? "border-purple-600" : "border-gray-200"
             }`}

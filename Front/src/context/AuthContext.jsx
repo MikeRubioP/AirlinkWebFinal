@@ -1,3 +1,4 @@
+// src/context/AuthContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 
@@ -13,8 +14,9 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null); // ✅ Agregado: estado del token
+    const [token, setToken] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [showLoginModal, setShowLoginModal] = useState(false); // ✅ NUEVO
 
     // Verificar si hay un token al cargar la app
     useEffect(() => {
@@ -24,7 +26,7 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = async () => {
         const savedToken = localStorage.getItem('token');
         if (savedToken) {
-            setToken(savedToken); // ✅ Guardar token en estado
+            setToken(savedToken);
             try {
                 const res = await axios.get('http://localhost:5174/auth/me', {
                     headers: { Authorization: `Bearer ${savedToken}` }
@@ -34,7 +36,7 @@ export const AuthProvider = ({ children }) => {
                 console.error('Error al verificar autenticación:', err);
                 localStorage.removeItem('token');
                 setUser(null);
-                setToken(null); // ✅ Limpiar token en estado
+                setToken(null);
             }
         }
         setLoading(false);
@@ -42,15 +44,16 @@ export const AuthProvider = ({ children }) => {
 
     const login = (userData, authToken) => {
         localStorage.setItem('token', authToken);
-        setToken(authToken); // ✅ Guardar token en estado
+        setToken(authToken);
         setUser(userData);
+        setShowLoginModal(false); // ✅ NUEVO: Cierra el modal después del login
         console.log('✅ Usuario logueado:', userData.email || userData.nombreUsuario);
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         setUser(null);
-        setToken(null); // ✅ Limpiar token en estado
+        setToken(null);
         console.log('👋 Usuario deslogueado');
     };
 
@@ -61,13 +64,15 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user,
-            token, // ✅ Exportar token (requerido por MisViajes y DetalleVuelo)
+            token,
             login,
             logout,
             checkAuth,
             isCliente,
             isAuthenticated: !!user,
-            loading
+            loading,
+            showLoginModal,        // ✅ NUEVO
+            setShowLoginModal      // ✅ NUEVO
         }}>
             {!loading && children}
         </AuthContext.Provider>

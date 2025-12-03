@@ -6,6 +6,7 @@ import Footer from './Components/Footer';
 
 // ==================== GUARDS ====================
 import {
+  RequireAuth,
   RequireSearch,
   RequireFlightOut,
   RequireReturnIfRoundTrip,
@@ -132,39 +133,65 @@ function App() {
             />
 
             {/* ==================== PROCESO DE PAGO ==================== */}
-            {/* Requiere: vuelo de ida + (si es RT) vuelo de vuelta + asientos seleccionados */}
+            {/* 🔐 NUEVO: Requiere autenticación + vuelo de ida + (si es RT) vuelo de vuelta + asientos seleccionados */}
             <Route 
               path="/pago" 
               element={
-                <RequireFlightOut redirectTo="/">
-                  <RequireReturnIfRoundTrip redirectTo="/">
-                    <RequireCheckoutReady redirectTo="/">
-                      <Pago />
-                    </RequireCheckoutReady>
-                  </RequireReturnIfRoundTrip>
-                </RequireFlightOut>
+                <RequireAuth redirectTo="/">
+                  <RequireFlightOut redirectTo="/">
+                    <RequireReturnIfRoundTrip redirectTo="/">
+                      <RequireCheckoutReady redirectTo="/">
+                        <Pago />
+                      </RequireCheckoutReady>
+                    </RequireReturnIfRoundTrip>
+                  </RequireFlightOut>
+                </RequireAuth>
               } 
             />
 
             {/* ==================== CONFIRMACIÓN DE PAGO ==================== */}
-            {/* Requiere: todo el flujo anterior + pago completado */}
+            {/* 🔐 NUEVO: Requiere autenticación + todo el flujo anterior + pago completado */}
             <Route 
               path="/pago-exitoso" 
               element={
-                <RequireFlightOut redirectTo="/">
-                  <RequireReturnIfRoundTrip redirectTo="/">
-                    <RequirePaymentDone redirectTo="/">
-                      <PagoExitoso />
-                    </RequirePaymentDone>
-                  </RequireReturnIfRoundTrip>
-                </RequireFlightOut>
+                <RequireAuth redirectTo="/">
+                  <RequireFlightOut redirectTo="/">
+                    <RequireReturnIfRoundTrip redirectTo="/">
+                      <RequirePaymentDone redirectTo="/">
+                        <PagoExitoso />
+                      </RequirePaymentDone>
+                    </RequireReturnIfRoundTrip>
+                  </RequireFlightOut>
+                </RequireAuth>
               } 
             />
 
             {/* ==================== RUTAS DE CLIENTE ==================== */}
-            <Route path="/mis-viajes" element={<MisViajes />} />
-            <Route path="/mis-viajes/:id" element={<DetalleVuelo />} />
-            <Route path="/cuenta" element={<Cuenta />} />
+            {/* 🔐 NUEVO: Requiere autenticación para acceder */}
+            <Route 
+              path="/mis-viajes" 
+              element={
+                <RequireAuth redirectTo="/">
+                  <MisViajes />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/mis-viajes/:id" 
+              element={
+                <RequireAuth redirectTo="/">
+                  <DetalleVuelo />
+                </RequireAuth>
+              } 
+            />
+            <Route 
+              path="/cuenta" 
+              element={
+                <RequireAuth redirectTo="/">
+                  <Cuenta />
+                </RequireAuth>
+              } 
+            />
             <Route path="/check-in" element={<CheckIn />} />
             <Route path="/check-in/:codigo" element={<CheckIn />} />
             <Route path="/checkin" element={<CheckIn />} />
@@ -202,10 +229,13 @@ function NotFound() {
           La página que buscas no existe o fue movida.
         </p>
         
-         </div> href="/"
+          href="/"
           className="inline-block bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+        
           Volver al inicio
+        
       </div>
+    </div>
   );
 }
 

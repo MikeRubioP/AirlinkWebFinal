@@ -1,6 +1,8 @@
 // src/Components/Guards.jsx
 import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { getJsonLS, clearFlowState } from "../utils/flowStorage";
+import { useEffect } from "react";
 
 // ==================== HELPERS ====================
 const tarifaOk = (obj) => Boolean(obj?.tarifaIda || obj?.precioIda || obj?.fareIda);
@@ -8,7 +10,6 @@ const tarifaOkVta = (obj) => Boolean(obj?.tarifaVuelta || obj?.precioVuelta || o
 
 const hasSeats = (d) => {
   if (!d) return false;
-  // soporta ambas variantes: array suelto o dentro de vueloSeleccionado
   if (Array.isArray(d)) return d.length > 0;
   if (Array.isArray(d.asientosIda) && d.asientosIda.length > 0) return true;
   if (Array.isArray(d.asientosVuelta) && d.asientosVuelta.length > 0) return true;
@@ -16,6 +17,28 @@ const hasSeats = (d) => {
 };
 
 // ==================== GUARDS ====================
+
+/**
+ * RequireAuth
+ * Requiere que el usuario esté autenticado.
+ * Si no lo está, abre el modal de login y NO permite acceso.
+ */
+export function RequireAuth({ children }) {
+  const { user, setShowLoginModal } = useAuth();
+
+  useEffect(() => {
+    if (!user) {
+      setShowLoginModal(true);
+    }
+  }, [user, setShowLoginModal]);
+
+  // Si no hay usuario, no renderiza los children (bloquea el acceso)
+  if (!user) {
+    return null;
+  }
+
+  return children;
+}
 
 /**
  * RequireSearch
@@ -73,13 +96,8 @@ export function RequireReturnIfRoundTrip({ children, redirectTo = "/" }) {
 export function RequireCheckoutReady({ children, redirectTo = "/" }) {
   const loc = useLocation();
 
-  // a) bandera clásica
   const flag = localStorage.getItem("checkout_ready") === "true";
-
-  // b) asientos guardados sueltos
   const seatsLS = getJsonLS("asientosSeleccionados");
-
-  // c) asientos dentro de vueloSeleccionado
   const d = getJsonLS("vueloSeleccionado");
 
   const ok = flag || hasSeats(seatsLS) || hasSeats(d);
